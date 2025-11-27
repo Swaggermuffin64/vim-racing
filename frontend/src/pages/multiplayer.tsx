@@ -1,0 +1,366 @@
+import React, { useEffect, useRef, useCallback } from 'react';
+import { EditorState, Compartment } from "@codemirror/state";
+import { cpp } from "@codemirror/lang-cpp";
+import {
+  EditorView, keymap, drawSelection,
+  highlightActiveLine, lineNumbers, highlightActiveLineGutter
+} from "@codemirror/view";
+import { defaultKeymap } from "@codemirror/commands";
+import { searchKeymap } from "@codemirror/search";
+import { vim } from '@replit/codemirror-vim';
+import { oneDark } from '@codemirror/theme-one-dark';
+
+import { useGameSocket } from '../hooks/useGameSocket';
+import { Lobby } from '../components/Lobby';
+import { WaitingRoom } from '../components/WaitingRoom';
+import { RaceCountdown } from '../components/RaceCountdown';
+import { RaceResults } from '../components/RaceResults';
+import { targetHighlightExtension, setTargetPosition } from '../extensions/targetHighlight';
+import { opponentCursorExtension, setOpponentCursor } from '../extensions/opponentCursor';
+import { cursorTracker } from '../extensions/cursorTracker';
+
+// Line numbers compartment for relative mode
+const lineNumbersCompartment = new Compartment();
+
+function createLineNumbersExtension(relative: boolean) {
+  return lineNumbers({
+    formatNumber: (lineNo: number, state: EditorState) => {
+      if (!relative) return String(lineNo);
+      const cursorLine = state.doc.lineAt(state.selection.main.head).number;
+      if (lineNo === cursorLine) return String(lineNo);
+      return String(Math.abs(cursorLine - lineNo));
+    },
+  });
+}
+
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    minHeight: '100vh',
+    background: '#0a0a0f',
+  },
+  raceContainer: {
+    padding: '24px',
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
+  },
+  title: {
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#e0e0e0',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  timer: {
+    fontSize: '32px',
+    fontWeight: 700,
+    color: '#ff6b6b',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  taskBanner: {
+    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+    border: '1px solid #0f3460',
+    borderRadius: '8px',
+    padding: '16px 24px',
+    marginBottom: '24px',
+  },
+  taskType: {
+    fontSize: '12px',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '1px',
+    color: '#ff6b6b',
+    marginBottom: '8px',
+  },
+  taskDescription: {
+    fontSize: '18px',
+    fontWeight: 500,
+    color: '#e0e0e0',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  editorsContainer: {
+    display: 'flex',
+    gap: '24px',
+  },
+  editorPanel: {
+    flex: 1,
+  },
+  editorLabel: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#888',
+    marginBottom: '8px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  editorWrapper: {
+    borderRadius: '8px',
+    overflow: 'hidden',
+    border: '1px solid #333',
+    boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5)',
+  },
+  finishedBadge: {
+    background: '#00ff88',
+    color: '#1a1a2e',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: 600,
+  },
+  opponentCursor: {
+    position: 'relative' as const,
+  },
+  leaveButton: {
+    padding: '8px 16px',
+    fontSize: '14px',
+    background: 'transparent',
+    border: '1px solid #ff6b6b',
+    borderRadius: '6px',
+    color: '#ff6b6b',
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+};
+
+const MultiplayerGame: React.FC = () => {
+  const {
+    isConnected,
+    gameState,
+    error,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    sendCursorMove,
+  } = useGameSocket();
+
+  const myEditorRef = useRef<HTMLDivElement>(null);
+  const opponentEditorRef = useRef<HTMLDivElement>(null);
+  const myViewRef = useRef<EditorView | null>(null);
+  const opponentViewRef = useRef<EditorView | null>(null);
+  const timerRef = useRef<number>(0);
+  const [elapsedTime, setElapsedTime] = React.useState(0);
+
+  // Use ref to avoid stale closure in cursorTracker
+  const sendCursorMoveRef = useRef(sendCursorMove);
+  useEffect(() => {
+    sendCursorMoveRef.current = sendCursorMove;
+  }, [sendCursorMove]);
+
+  // Find opponent player
+  const opponent = gameState.players.find(p => p.id !== gameState.myPlayerId);
+  const me = gameState.players.find(p => p.id === gameState.myPlayerId);
+
+  // Handle cursor movement in my editor (uses ref to always get latest sendCursorMove)
+  const handleCursorChange = useCallback((offset: number) => {
+    sendCursorMoveRef.current(offset);
+  }, []);
+
+  // Timer effect
+  useEffect(() => {
+    if (gameState.roomState === 'racing' && gameState.startTime) {
+      const interval = setInterval(() => {
+        setElapsedTime(Date.now() - gameState.startTime!);
+      }, 100);
+      timerRef.current = interval as unknown as number;
+      return () => clearInterval(interval);
+    } else {
+      setElapsedTime(0);
+    }
+  }, [gameState.roomState, gameState.startTime]);
+
+  // Initialize my editor
+  useEffect(() => {
+    if (gameState.roomState === 'racing' && myEditorRef.current && !myViewRef.current && gameState.task) {
+      myViewRef.current = new EditorView({
+        doc: gameState.task.codeSnippet,
+        parent: myEditorRef.current,
+        extensions: [
+          vim(),
+          cpp(),
+          oneDark,
+          ...targetHighlightExtension,
+          cursorTracker(handleCursorChange),
+          lineNumbersCompartment.of(createLineNumbersExtension(true)),
+          drawSelection(),
+          highlightActiveLine(),
+          highlightActiveLineGutter(),
+          keymap.of([...defaultKeymap, ...searchKeymap]),
+          EditorView.theme({
+            '&': {
+              fontSize: '14px',
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+            },
+          }),
+        ],
+      });
+
+      // Set target highlight
+      myViewRef.current.dispatch({
+        effects: setTargetPosition.of(gameState.task.targetOffset),
+      });
+
+      // Focus the editor
+      setTimeout(() => myViewRef.current?.focus(), 100);
+    }
+
+    return () => {
+      if (myViewRef.current) {
+        myViewRef.current.destroy();
+        myViewRef.current = null;
+      }
+    };
+  }, [gameState.roomState, gameState.task, handleCursorChange]);
+
+  // Initialize opponent's editor (read-only view)
+  useEffect(() => {
+    if (gameState.roomState === 'racing' && opponentEditorRef.current && !opponentViewRef.current && gameState.task) {
+      opponentViewRef.current = new EditorView({
+        doc: gameState.task.codeSnippet,
+        parent: opponentEditorRef.current,
+        extensions: [
+          cpp(),
+          oneDark,
+          ...targetHighlightExtension,
+          ...opponentCursorExtension,  // Yellow cursor for opponent
+          lineNumbers(),
+          EditorView.editable.of(false),
+          EditorView.theme({
+            '&': {
+              fontSize: '14px',
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+            },
+          }),
+        ],
+      });
+
+      // Set target highlight
+      opponentViewRef.current.dispatch({
+        effects: setTargetPosition.of(gameState.task.targetOffset),
+      });
+    }
+
+    return () => {
+      if (opponentViewRef.current) {
+        opponentViewRef.current.destroy();
+        opponentViewRef.current = null;
+      }
+    };
+  }, [gameState.roomState, gameState.task]);
+
+  // Update opponent cursor position with yellow highlight
+  const opponentCursorOffset = opponent?.cursorOffset ?? 0;
+  
+  useEffect(() => {
+    if (opponentViewRef.current && gameState.roomState === 'racing') {
+      opponentViewRef.current.dispatch({
+        effects: setOpponentCursor.of(opponentCursorOffset),
+      });
+    }
+  }, [opponentCursorOffset, gameState.roomState]);
+
+  // Format time display
+  const formatTime = (ms: number): string => {
+    const seconds = Math.floor(ms / 1000);
+    const tenths = Math.floor((ms % 1000) / 100);
+    return `${seconds}.${tenths}s`;
+  };
+
+  // Render based on game state
+  if (gameState.roomState === 'idle') {
+    return (
+      <div style={styles.container}>
+        <Lobby
+          isConnected={isConnected}
+          error={error}
+          onCreateRoom={createRoom}
+          onJoinRoom={joinRoom}
+        />
+      </div>
+    );
+  }
+
+  if (gameState.roomState === 'waiting') {
+    return (
+      <div style={styles.container}>
+        <WaitingRoom
+          roomId={gameState.roomId!}
+          players={gameState.players}
+          onLeave={leaveRoom}
+        />
+      </div>
+    );
+  }
+
+  // Racing or finished state
+  return (
+    <div style={styles.container}>
+      {gameState.roomState === 'countdown' && gameState.countdown !== null && (
+        <RaceCountdown seconds={gameState.countdown} />
+      )}
+
+      {gameState.roomState === 'finished' && gameState.rankings && (
+        <RaceResults
+          rankings={gameState.rankings}
+          myPlayerId={gameState.myPlayerId}
+          onPlayAgain={leaveRoom} // For now, just leave and rejoin
+          onLeave={leaveRoom}
+        />
+      )}
+
+      <div style={styles.raceContainer}>
+        <div style={styles.header}>
+          <div style={styles.title}>🏎️ Vim Racing</div>
+          <div style={styles.timer}>{formatTime(elapsedTime)}</div>
+          <button style={styles.leaveButton} onClick={leaveRoom}>
+            Leave
+          </button>
+        </div>
+
+        {gameState.task && (
+          <div style={styles.taskBanner}>
+            <div style={styles.taskType}>🎯 Navigate</div>
+            <div style={styles.taskDescription}>{gameState.task.description}</div>
+          </div>
+        )}
+
+        <div style={styles.editorsContainer}>
+          {/* My Editor */}
+          <div style={styles.editorPanel}>
+            <div style={styles.editorLabel}>
+              🏎️ You ({me?.name || 'Player'})
+              {me?.isFinished && (
+                <span style={styles.finishedBadge}>
+                  ✓ {formatTime(me.finishTime || 0)}
+                </span>
+              )}
+            </div>
+            <div style={styles.editorWrapper}>
+              <div ref={myEditorRef} />
+            </div>
+          </div>
+
+          {/* Opponent Editor */}
+          <div style={styles.editorPanel}>
+            <div style={styles.editorLabel}>
+              🚗 {opponent?.name || 'Opponent'}
+              {opponent?.isFinished && (
+                <span style={styles.finishedBadge}>
+                  ✓ {formatTime(opponent.finishTime || 0)}
+                </span>
+              )}
+            </div>
+            <div style={styles.editorWrapper}>
+              <div ref={opponentEditorRef} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default MultiplayerGame;
+
