@@ -117,15 +117,6 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
-    socket.on('game:opponent_cursor', ({ playerId, offset }) => {
-      setGameState(prev => ({
-        ...prev,
-        players: prev.players.map(p =>
-          p.id === playerId ? { ...p, cursorOffset: offset } : p
-        ),
-      }));
-    });
-
     socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask}) => {
       console.log('Player', playerId, 'finished task', taskProgress);
       setGameState(prev => ({
@@ -137,6 +128,15 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
+    socket.on('game:opponent_finished_task', ({ playerId, taskProgress }) => {
+      console.log('Player', playerId, 'finished task', taskProgress);
+      setGameState(prev => ({
+        ...prev,
+        players: prev.players.map(p =>
+          p.id === playerId ? { ...p, taskProgress: taskProgress } : p
+        ),
+      }));
+    });
 
     socket.on('game:player_finished', ({ playerId, time, position }) => {
       console.log('🎉 Player finished:', playerId, 'Position:', position);

@@ -13,6 +13,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { Task } from '../types/task';
 import { targetHighlightExtension, setTargetPosition } from '../extensions/targetHighlight';
 import { cursorTracker } from '../extensions/cursorTracker';
+import { readOnlyNavigation } from '../extensions/readOnlyNavigation';
 import { TaskBanner } from '../components/TaskBanner';
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
@@ -181,6 +182,7 @@ const VimEditor: React.FC = () => {
           vim(),
           cpp(),
           oneDark,
+          readOnlyNavigation,
           ...targetHighlightExtension,
           cursorTracker(handleCursorChange),
           lineNumbersCompartment.of(createLineNumbersExtension(true)),

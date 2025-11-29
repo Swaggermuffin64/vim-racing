@@ -18,6 +18,7 @@ import { RaceResults } from '../components/RaceResults';
 import { targetHighlightExtension, setTargetPosition } from '../extensions/targetHighlight';
 import { opponentCursorExtension, setOpponentCursor } from '../extensions/opponentCursor';
 import { cursorTracker } from '../extensions/cursorTracker';
+import { readOnlyNavigation } from '../extensions/readOnlyNavigation';
 
 // Line numbers compartment for relative mode
 const lineNumbersCompartment = new Compartment();
@@ -181,6 +182,7 @@ const MultiplayerGame: React.FC = () => {
           vim(),
           cpp(),
           oneDark,
+          readOnlyNavigation,
           ...targetHighlightExtension,
           cursorTracker(handleCursorChange),
           lineNumbersCompartment.of(createLineNumbersExtension(true)),
@@ -341,20 +343,22 @@ const MultiplayerGame: React.FC = () => {
               <div ref={myEditorRef} />
             </div>
           </div>
-
-          {/* Opponent Editor */}
-          <div style={styles.editorPanel}>
-            <div style={styles.editorLabel}>
-              🚗 {opponent?.name || 'Opponent'}
-              {opponent?.isFinished && (
-                <span style={styles.finishedBadge}>
-                  ✓ {formatTime(opponent.finishTime || 0)}
-                </span>
-              )}
-            </div>
-            <div style={styles.editorWrapper}>
-              <div ref={opponentEditorRef} />
-            </div>
+ 
+          {/* Show all players except me (opponents) and their task progress */}
+          <div style={{ color: '#e0e0e0' }}>
+            <strong>Opponents:</strong>
+            {gameState.players
+              .filter(player => player.id !== gameState.myPlayerId)
+              .map(opponent => (
+                <div key={opponent.id}>
+                  {opponent.name}: Task {opponent.taskProgress ?? 0}/{gameState.rankings ? gameState.rankings.length : 10}
+                  {opponent.isFinished && (
+                    <span style={styles.finishedBadge}>
+                      ✓ {formatTime(opponent.finishTime || 0)}
+                    </span>
+                  )}
+                </div>
+              ))}
           </div>
         </div>
       </div>

@@ -7,7 +7,7 @@ import type {
   InterServerEvents,
   SocketData 
 } from './types.js';
-import { generatePositionTask, generatePositionTasks } from '../tasks.js';
+import { generatePositionTasks } from '../tasks.js';
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -79,6 +79,7 @@ export class RoomManager {
       socket.emit('room:error', { message: 'Race already in progress' });
       return null;
     }
+
     //currently limit of 2 players per room
     if (room.players.size >= 2) {
       socket.emit('room:error', { message: 'Room is full' });
@@ -189,32 +190,35 @@ export class RoomManager {
   handleCursorMove(socket: GameSocket, offset: number): void {
     const roomId = socket.data.roomId;
     const playerId = socket.data.playerId;
-
+    console.log("check 1");
     if (!roomId || !playerId) return;
-
+    console.log("check 2");
     const room = this.rooms.get(roomId);
     if (!room || room.state !== 'racing') return;
 
     const player = room.players.get(playerId);
     if (!player || player.isFinished) return;
     //1. Set the currentOffset, send to other players
+    console.log(player.cursorOffset, offset);
     player.cursorOffset = offset;
-    // Broadcast to other players
-    socket.to(roomId).emit('game:opponent_cursor', { playerId, offset});
-
     //2. Check if the player is at the current task offset, if so increment the taskProgress, and send new task to the player and others
-    if (room.tasks[player.taskProgress]?.targetOffset !== offset) {
+    const currentTask = room.tasks[player.taskProgress];
+    if (!currentTask || currentTask.targetOffset !== offset) {
       return;
     }
-
     player.taskProgress+=1
-    this.io.to(roomId).emit('game:player_finished_task', {
+    //3. Send task progress and new task to the user
+    socket.emit('game:player_finished_task',{
       playerId,
       taskProgress: player.taskProgress,
       newTask: room.tasks[player.taskProgress]
     })
-
-    //3. Also, check if the player has now finished all tasks, if so set isFinished to true and send the final results to the player and others
+    //4. Send the progress to the opponents
+    this.io.to(roomId).emit('game:opponent_finished_task', {
+      playerId,
+      taskProgress: player.taskProgress,
+    })
+    //5. Check if the player has now finished all tasks, if so set isFinished to true and send the final results to the player and others
     if (player.taskProgress !== this.NUM_TASKS){
         return;
     }

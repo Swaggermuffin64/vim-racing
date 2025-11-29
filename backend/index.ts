@@ -13,6 +13,13 @@ import { RoomManager } from './multiplayer/roomManager.js';
 
 const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '3001', 10);
 
+// CORS origins - add your production frontend URL to FRONTEND_URL env var
+const CORS_ORIGINS = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+];
+
 // Create Fastify with its own server
 const fastify = Fastify({
   logger: true
@@ -20,7 +27,7 @@ const fastify = Fastify({
 
 // Enable CORS for frontend
 await fastify.register(cors, {
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+  origin: CORS_ORIGINS,
 });
 
 // Store active tasks (in production, use Redis/DB)
@@ -76,7 +83,7 @@ await fastify.listen({ port: BACKEND_PORT, host: '0.0.0.0' });
 // Now attach Socket.IO to the Fastify server
 const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(fastify.server, {
   cors: {
-    origin: ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: CORS_ORIGINS,
     methods: ['GET', 'POST'],
   },
 });

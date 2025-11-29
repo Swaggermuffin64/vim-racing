@@ -37,7 +37,7 @@ export interface ServerToClientEvents {
   'room:error': (data: { message: string }) => void;
   'game:countdown': (data: { seconds: number }) => void;
   'game:start': (data: { startTime: number, initialTask: PositionTask | undefined}) => void;
-  'game:opponent_cursor': (data: { playerId: string; offset: number; }) => void;
+  'game:opponent_finished_task': (data: { playerId: string; taskProgress: number;}) => void;
   'game:player_finished_task': (data: { playerId: string; taskProgress: number; newTask: PositionTask | undefined}) => void;
   'game:player_finished': (data: { playerId: string; time: number; position: number }) => void;
   'game:complete': (data: { rankings: Array<{ playerId: string; playerName: string; time: number; position: number }> }) => void;
