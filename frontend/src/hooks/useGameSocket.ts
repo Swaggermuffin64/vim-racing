@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { Player, GameTask, Ranking, RoomState, GameState } from '../types/multiplayer';
+import type { GameState} from '../types/multiplayer';
 
 const SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
@@ -54,25 +54,23 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     // Room events
-    socket.on('room:created', ({ roomId, player, task }) => {
+    socket.on('room:created', ({ roomId, player }) => {
       console.log('🏠 Room created:', roomId);
       setGameState(prev => ({
         ...prev,
         roomId,
         roomState: 'waiting',
         players: [player],
-        task,  // Host now receives the task
       }));
     });
 
-    socket.on('room:joined', ({ roomId, players, task }) => {
+    socket.on('room:joined', ({ roomId, players }) => {
       console.log('🚪 Joined room:', roomId);
       setGameState(prev => ({
         ...prev,
         roomId,
         roomState: 'waiting',
         players,
-        task,
       }));
     });
 
@@ -108,13 +106,14 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
-    socket.on('game:start', ({ startTime }) => {
-      console.log('🏁 Race started!');
+    socket.on('game:start', ({ startTime, initialTask}) => {
+      console.log('🏁 Race started!', initialTask);
       setGameState(prev => ({
         ...prev,
         roomState: 'racing',
         countdown: null,
         startTime,
+        task: initialTask 
       }));
     });
 
@@ -126,6 +125,18 @@ export function useGameSocket(): UseGameSocketReturn {
         ),
       }));
     });
+
+    socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask}) => {
+      console.log('Player', playerId, 'finished task', taskProgress);
+      setGameState(prev => ({
+        ...prev,
+        players: prev.players.map(p =>
+          p.id === playerId ? { ...p, taskProgress: taskProgress } : p
+        ),
+        task: newTask 
+      }));
+    });
+
 
     socket.on('game:player_finished', ({ playerId, time, position }) => {
       console.log('🎉 Player finished:', playerId, 'Position:', position);

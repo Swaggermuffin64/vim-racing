@@ -7,7 +7,7 @@ import type {
   InterServerEvents,
   SocketData 
 } from './types.js';
-import { generatePositionTask } from '../tasks.js';
+import { generatePositionTask, generatePositionTasks } from '../tasks.js';
 
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -16,7 +16,7 @@ export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
   private io: GameServer;
-
+  private NUM_TASKS: number = 10;
   constructor(io: GameServer) {
     this.io = io;
   }
@@ -39,18 +39,18 @@ export class RoomManager {
       id: playerId,
       name: playerName,
       cursorOffset: 0,
+      taskProgress: 0, // 0 to NUM_TASKS - 1
       isFinished: false,
     };
 
-    const task = generatePositionTask();
+    const tasks = generatePositionTasks(this.NUM_TASKS);
     
     const room: GameRoom = {
       id: roomId,
       players: new Map([[playerId, player]]),
-      task,
+      tasks: tasks,
       state: 'waiting',
     };
-
     this.rooms.set(roomId, room);
     this.playerRooms.set(playerId, roomId);
     
@@ -64,6 +64,7 @@ export class RoomManager {
     
     return room;
   }
+    
 
   joinRoom(socket: GameSocket, roomId: string, playerName: string): GameRoom | null {
     const room = this.rooms.get(roomId);
@@ -78,7 +79,7 @@ export class RoomManager {
       socket.emit('room:error', { message: 'Race already in progress' });
       return null;
     }
-
+    //currently limit of 2 players per room
     if (room.players.size >= 2) {
       socket.emit('room:error', { message: 'Room is full' });
       return null;
@@ -88,6 +89,7 @@ export class RoomManager {
       id: playerId,
       name: playerName,
       cursorOffset: 0,
+      taskProgress: 0,
       isFinished: false,
     };
 
@@ -102,7 +104,7 @@ export class RoomManager {
 
     console.log(`👤 ${playerName} joined room ${roomId}`);
 
-    // Notify other players
+    // Notify other players (not the player who joined)
     socket.to(roomId).emit('room:player_joined', { player });
 
     // If we have 2 players, start countdown
@@ -166,7 +168,7 @@ export class RoomManager {
   }
 
   private startRace(roomId: string): void {
-    const room = this.rooms.get(roomId);
+    const room = this.rooms.get(roomId); //refetch source of truth
     if (!room) return;
 
     room.state = 'racing';
@@ -176,11 +178,12 @@ export class RoomManager {
     room.players.forEach(player => {
       player.cursorOffset = 0;
       player.isFinished = false;
+      player.taskProgress = 0;
       player.finishTime = 0;
     });
 
     console.log(`🏁 Race started in room ${roomId}`);
-    this.io.to(roomId).emit('game:start', { startTime: room.startTime });
+    this.io.to(roomId).emit('game:start', { startTime: room.startTime, initialTask: room.tasks[0]});
   }
 
   handleCursorMove(socket: GameSocket, offset: number): void {
@@ -194,31 +197,42 @@ export class RoomManager {
 
     const player = room.players.get(playerId);
     if (!player || player.isFinished) return;
-
+    //1. Set the currentOffset, send to other players
     player.cursorOffset = offset;
-
     // Broadcast to other players
-    socket.to(roomId).emit('game:opponent_cursor', { playerId, offset });
+    socket.to(roomId).emit('game:opponent_cursor', { playerId, offset});
 
-    // Check if player finished
-    if (offset === room.task.targetOffset) {
-      player.isFinished = true;
-      player.finishTime = Date.now() - (room.startTime || 0);
+    //2. Check if the player is at the current task offset, if so increment the taskProgress, and send new task to the player and others
+    if (room.tasks[player.taskProgress]?.targetOffset !== offset) {
+      return;
+    }
 
-      const finishedCount = Array.from(room.players.values()).filter(p => p.isFinished).length;
+    player.taskProgress+=1
+    this.io.to(roomId).emit('game:player_finished_task', {
+      playerId,
+      taskProgress: player.taskProgress,
+      newTask: room.tasks[player.taskProgress]
+    })
 
-      console.log(`🎉 ${player.name} finished in position ${finishedCount}!`);
+    //3. Also, check if the player has now finished all tasks, if so set isFinished to true and send the final results to the player and others
+    if (player.taskProgress !== this.NUM_TASKS){
+        return;
+    }
+    player.isFinished = true;
+    player.finishTime = Date.now() - (room.startTime || 0);
 
-      this.io.to(roomId).emit('game:player_finished', {
-        playerId,
-        time: player.finishTime,
-        position: finishedCount,
-      });
+    const finishedCount = Array.from(room.players.values()).filter(p => p.isFinished).length;
+    console.log(`🎉 ${player.name} finished in position ${finishedCount}!`);
 
-      // Check if all players finished
-      if (this.allPlayersFinished(room)) {
-        this.endRace(roomId);
-      }
+    this.io.to(roomId).emit('game:player_finished', {
+      playerId,
+      time: player.finishTime,
+      position: finishedCount,
+    });
+
+    // Check if all players finished
+    if (this.allPlayersFinished(room)) {
+      this.endRace(roomId);
     }
   }
 
@@ -268,4 +282,3 @@ export class RoomManager {
     return Array.from(room.players.values());
   }
 }
-

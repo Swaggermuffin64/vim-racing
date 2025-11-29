@@ -148,6 +148,11 @@ export function generatePositionTask(): PositionTask {
   };
 }
 
+
+export function generatePositionTasks(count: number): PositionTask[] {
+  return Array.from({ length: count }, generatePositionTask);
+}
+
 /**
  * Check if a cursor position matches the target
  */

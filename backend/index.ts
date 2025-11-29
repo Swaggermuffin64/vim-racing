@@ -85,6 +85,10 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
 const roomManager = new RoomManager(io);
 
 // Socket.IO connection handling
+// This creates sockets when first connecting to the server,
+// and also routes already created sockets to the correct handler.
+// all sockets accessable via io.sockets.sockets // io.sockets.sockets.get('abc...')
+
 io.on('connection', (socket) => {
   console.log(`🔌 Player connected: ${socket.id}`);
 
@@ -96,19 +100,17 @@ io.on('connection', (socket) => {
     socket.emit('room:created', { 
       roomId: room.id, 
       player,
-      task: room.task,  // Include task for host
     });
   });
 
   // Join an existing room
   socket.on('room:join', ({ roomId, playerName }) => {
+    //player inputs the room id and name
     const room = roomManager.joinRoom(socket, roomId, playerName);
-    
     if (room) {
       socket.emit('room:joined', {
         roomId: room.id,
         players: roomManager.getPlayersArray(room),
-        task: room.task,
       });
     }
   });

@@ -4,6 +4,7 @@ export interface Player {
   id: string;
   name: string;
   cursorOffset: number;
+  taskProgress: number;
   isFinished: boolean;
   finishTime?: number;
 }
