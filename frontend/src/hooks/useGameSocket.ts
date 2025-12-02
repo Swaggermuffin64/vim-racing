@@ -43,9 +43,13 @@ export function useGameSocket(): UseGameSocketReturn {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      console.log('🔌 Connected to server');
+      console.log('🔌 Connected to server, socket id:', socket.id);
       setIsConnected(true);
-      setGameState(prev => ({ ...prev, myPlayerId: socket.id || null }));
+      setGameState(prev => {
+        const newState = { ...prev, myPlayerId: socket.id || null };
+        console.log('Updated gameState with myPlayerId:', newState);
+        return newState;
+      });
     });
 
     socket.on('disconnect', () => {

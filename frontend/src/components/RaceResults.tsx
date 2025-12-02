@@ -105,7 +105,8 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
 }) => {
   const winner = rankings[0];
   const isWinner = winner?.playerId === myPlayerId;
-
+  console.log("myPlayerId", myPlayerId);
+  console.log("rankings", rankings);
   const formatTime = (ms: number): string => {
     if (ms === 0) return 'DNF';
     const seconds = ms / 1000;
