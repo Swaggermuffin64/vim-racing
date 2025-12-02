@@ -346,9 +346,8 @@ const MultiplayerGame: React.FC = () => {
  
           {/* Show all players except me (opponents) and their task progress */}
           <div style={{ color: '#e0e0e0' }}>
-            <strong>Opponents:</strong>
+            <strong>Scoreboard:</strong>
             {gameState.players
-              .filter(player => player.id !== gameState.myPlayerId)
               .map(opponent => (
                 <div key={opponent.id}>
                   {opponent.name}: Task {opponent.taskProgress ?? 0}/{gameState.rankings ? gameState.rankings.length : 10}

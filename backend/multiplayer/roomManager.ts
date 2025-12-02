@@ -16,7 +16,7 @@ export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
   private io: GameServer;
-  private NUM_TASKS: number = 10;
+  private NUM_TASKS: number = 2;
   constructor(io: GameServer) {
     this.io = io;
   }
