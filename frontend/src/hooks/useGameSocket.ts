@@ -166,6 +166,11 @@ export function useGameSocket(): UseGameSocketReturn {
     };
   }, []);
 
+  // Debug: Log gameState changes (remove in production)
+  useEffect(() => {
+    console.log('🎮 GameState updated:', gameState);
+  }, [gameState]);
+
   // Actions
   const createRoom = useCallback((playerName: string) => {
     if (socketRef.current) {
