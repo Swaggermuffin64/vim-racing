@@ -109,19 +109,29 @@ function findInterestingPositions(code: string): Position[] {
 
 function findDeleteRange(code: string): { from: number; to: number } {
   const interestingPositions = findInterestingPositions(code);
-  const position1 = Math.floor(Math.random() * interestingPositions.length);
-  let position2 = Math.floor(Math.random() * interestingPositions.length);
+  const index1 = Math.floor(Math.random() * interestingPositions.length);
+  let index2 = Math.floor(Math.random() * interestingPositions.length);
 
-  //make sure they're different
-  while (position1 === position2) {
-    position2 = Math.floor(Math.random() * interestingPositions.length);
+  // Make sure they're different
+  while (index1 === index2) {
+    index2 = Math.floor(Math.random() * interestingPositions.length);
   }
 
-  return {
-    from: Math.min(position1, position2),
-    to: Math.max(position1, position2)
-  };
+  // Convert Position objects to character offsets
+  const pos1 = interestingPositions[index1];
+  const pos2 = interestingPositions[index2];
+  
+  if (!pos1 || !pos2) {
+    return { from: 0, to: 1 };
+  }
 
+  const offset1 = positionToOffset(code, pos1);
+  const offset2 = positionToOffset(code, pos2);
+
+  return {
+    from: Math.min(offset1, offset2),
+    to: Math.max(offset1, offset2)
+  };
 }
 
 

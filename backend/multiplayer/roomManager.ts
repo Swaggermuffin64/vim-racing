@@ -12,6 +12,19 @@ import type { Task } from '../types.js';
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
+function shuffle<T>(array: T[]): T[] {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const temp = result[i];
+    if (temp !== undefined && result[j] !== undefined) {
+      result[i] = result[j];
+      result[j] = temp;
+    }
+  }
+  return result;
+}
+
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
@@ -43,13 +56,14 @@ export class RoomManager {
       isFinished: false,
     };
 
-    const positionTasks : Task[] = generatePositionTasks(this.NUM_TASKS);
-    const deleteTasks : Task[] = generateDeleteTasks(this.NUM_TASKS);
-    
+    const positionTasks: Task[] = generatePositionTasks(this.NUM_TASKS);
+    const deleteTasks: Task[] = generateDeleteTasks(this.NUM_TASKS);
+    const allTasks = shuffle([...positionTasks, ...deleteTasks]);
+
     const room: GameRoom = {
       id: roomId,
       players: new Map([[playerId, player]]),
-      tasks: deleteTasks,
+      tasks: allTasks,
       state: 'waiting',
     };
     this.rooms.set(roomId, room);
