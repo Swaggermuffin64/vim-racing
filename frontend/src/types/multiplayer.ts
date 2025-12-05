@@ -1,4 +1,15 @@
+import { Task, PositionTask } from './task'
 // Multiplayer types for frontend
+
+// Default empty task used before game starts
+export const EMPTY_TASK: PositionTask = {
+  id: '',
+  type: 'navigate',
+  description: '',
+  codeSnippet: '',
+  targetPosition: { line: 1, col: 0 },
+  targetOffset: 0,
+};
 
 export interface Player {
   id: string;
@@ -31,10 +42,11 @@ export interface GameState {
   roomId: string | null;
   roomState: RoomState;
   players: Player[];
-  task: GameTask | null;
+  task: Task;
   countdown: number | null;
   startTime: number | null;
   rankings: Ranking[] | null;
   myPlayerId: string | null;
+  shouldResetEditor: boolean;  // Set to true when validation fails, cleared after reset
 }
 

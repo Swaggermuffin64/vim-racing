@@ -1,4 +1,4 @@
-import type { PositionTask, Position } from './types.js';
+import type { PositionTask, DeleteTask, Position, Task} from './types.js';
 
 // Code snippets for vim racing
 const CODE_SNIPPETS: string[] = [
@@ -107,11 +107,28 @@ function findInterestingPositions(code: string): Position[] {
   return positions;
 }
 
+function findDeleteRange(code: string): { from: number; to: number } {
+  const interestingPositions = findInterestingPositions(code);
+  const position1 = Math.floor(Math.random() * interestingPositions.length);
+  let position2 = Math.floor(Math.random() * interestingPositions.length);
+
+  //make sure they're different
+  while (position1 === position2) {
+    position2 = Math.floor(Math.random() * interestingPositions.length);
+  }
+
+  return {
+    from: Math.min(position1, position2),
+    to: Math.max(position1, position2)
+  };
+
+}
+
+
 /**
  * Generate a description for a navigation task
  */
 function generateDescription(code: string, pos: Position): string {
-  const char = getCharAtPosition(code, pos);
   const lines = code.split('\n');
   const line = lines[pos.line - 1] ?? '';
   
@@ -120,9 +137,8 @@ function generateDescription(code: string, pos: Position): string {
   const contextEnd = Math.min(line.length, pos.col + 10);
   const context = line.substring(contextStart, contextEnd);
   
-  return `Move cursor to "${char}" on line ${pos.line} (in: ${context.trim()})`;
+  return `Move cursor to the highlighted character (in: ${context.trim()}.)`;
 }
-
 let taskIdCounter = 0;
 
 /**
@@ -148,9 +164,29 @@ export function generatePositionTask(): PositionTask {
   };
 }
 
+export function generateDeleteTask(): DeleteTask {
+  const snippetIndex = Math.floor(Math.random() * CODE_SNIPPETS.length);
+  const snippet = CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!;
+  const { from, to } = findDeleteRange(snippet);
+  // 'from' and 'to' are offsets that specify the region to delete
+  // Make sure from <= to
+  const expectedResult = snippet.slice(0, from) + snippet.slice(to);
+  return {
+    id: `task-${++taskIdCounter}`,
+    type: 'delete',
+    description: "Delete the highlighted section exactly", 
+    codeSnippet: snippet,
+    targetRange: {from, to},
+    expectedResult,
+  }
+}
 
-export function generatePositionTasks(count: number): PositionTask[] {
+export function generatePositionTasks(count: number): Task[] {
   return Array.from({ length: count }, generatePositionTask);
+}
+
+export function generateDeleteTasks(count: number): Task[] {
+  return Array.from({ length: count }, generateDeleteTask);
 }
 
 /**

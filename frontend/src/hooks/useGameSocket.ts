@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { GameState} from '../types/multiplayer';
+import type { GameState } from '../types/multiplayer';
+import { EMPTY_TASK } from '../types/multiplayer';
 
 const SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 
@@ -15,17 +16,21 @@ interface UseGameSocketReturn {
   joinRoom: (roomId: string, playerName: string) => void;
   leaveRoom: () => void;
   sendCursorMove: (offset: number) => void;
+  sendEditorText: (text: string) => void;
+  sendTaskComplete: () => void;
+  clearResetFlag: () => void;
 }
 
 const initialGameState: GameState = {
   roomId: null,
   roomState: 'idle',
   players: [],
-  task: null,
+  task: EMPTY_TASK,
   countdown: null,
   startTime: null,
   rankings: null,
   myPlayerId: null,
+  shouldResetEditor: false,
 };
 
 export function useGameSocket(): UseGameSocketReturn {
@@ -161,6 +166,14 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
+    socket.on('game:validation_failed', () => {
+      console.log('❌ Validation failed, flagging editor reset');
+      setGameState(prev => ({
+        ...prev,
+        shouldResetEditor: true,
+      }));
+    });
+
     return () => {
       socket.disconnect();
     };
@@ -192,10 +205,27 @@ export function useGameSocket(): UseGameSocketReturn {
   }, []);
 
   const sendCursorMove = useCallback((offset: number) => {
-    if (socketRef.current && gameState.roomState === 'racing') {
+    if (socketRef.current && gameState.task.type === 'navigate' && gameState.roomState === 'racing') {
       socketRef.current.emit('player:cursor', { offset });
     }
+  }, [gameState.roomState, gameState.task.type]);
+
+  const sendEditorText = useCallback((text: string) => {
+    if (socketRef.current && gameState.task.type === 'delete' && gameState.roomState === 'racing') {
+      console.log("firing");
+      socketRef.current.emit('player:editorText', { text });
+    }
+  }, [gameState.roomState, gameState.task.type]);
+
+  const sendTaskComplete = useCallback(() => {
+    if (socketRef.current && gameState.roomState === 'racing') {
+      socketRef.current.emit('player:task_complete');
+    }
   }, [gameState.roomState]);
+
+  const clearResetFlag = useCallback(() => {
+    setGameState(prev => ({ ...prev, shouldResetEditor: false }));
+  }, []);
 
   return {
     isConnected,
@@ -205,6 +235,9 @@ export function useGameSocket(): UseGameSocketReturn {
     joinRoom,
     leaveRoom,
     sendCursorMove,
+    sendEditorText,
+    sendTaskComplete,
+    clearResetFlag,
   };
 }
 

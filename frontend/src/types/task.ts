@@ -15,8 +15,16 @@ export interface PositionTask {
   targetPosition: Position;
   targetOffset: number;
 }
+export interface DeleteTask {
+  id: string;
+  type: 'delete';
+  description: string;
+  codeSnippet: string;
+  targetRange: { from: number; to: number };
+  expectedResult: string;
+}
 
-export type Task = PositionTask;
+export type Task = PositionTask | DeleteTask;
 
 export interface TaskResponse {
   task: Task;

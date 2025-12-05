@@ -1,20 +1,19 @@
 // Shared multiplayer types
-
-import type { PositionTask } from "../types.js";
+import type { Task} from "../types.js";
 
 export interface Player {
   id: string;
   name: string;
-  cursorOffset: number;
   taskProgress: number;
   isFinished: boolean;
+  successIndicator: { cursorOffset?: number; editorText?: string };
   finishTime?: number;
 }
 
 export interface GameRoom {
   id: string;
   players: Map<string, Player>;
-  tasks: PositionTask[];
+  tasks: Task[];
   state: 'waiting' | 'countdown' | 'racing' | 'finished';
   startTime?: number;
   countdownStart?: number;
@@ -26,6 +25,7 @@ export interface ClientToServerEvents {
   'room:join': (data: { roomId: string; playerName: string }) => void;
   'room:leave': () => void;
   'player:cursor': (data: { offset: number }) => void;
+  'player:editorText': (data: { text: string }) => void;
 }
 
 // Server → Client Events
@@ -36,9 +36,10 @@ export interface ServerToClientEvents {
   'room:player_left': (data: { playerId: string }) => void;
   'room:error': (data: { message: string }) => void;
   'game:countdown': (data: { seconds: number }) => void;
-  'game:start': (data: { startTime: number, initialTask: PositionTask | undefined}) => void;
+  'game:start': (data: { startTime: number, initialTask: Task | undefined}) => void;
   'game:opponent_finished_task': (data: { playerId: string; taskProgress: number;}) => void;
-  'game:player_finished_task': (data: { playerId: string; taskProgress: number; newTask: PositionTask | undefined}) => void;
+  'game:player_finished_task': (data: { playerId: string; taskProgress: number; newTask: Task | undefined}) => void;
+  'game:validation_failed': (playerId: string) => void;
   'game:player_finished': (data: { playerId: string; time: number; position: number }) => void;
   'game:complete': (data: { rankings: Array<{ playerId: string; playerName: string; time: number; position: number }> }) => void;
 }

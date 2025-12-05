@@ -132,6 +132,12 @@ io.on('connection', (socket) => {
     roomManager.handleCursorMove(socket, offset);
   });
 
+  // Handle editor text for delete task validation
+  socket.on('player:editorText', ({ text }) => {
+    console.log("TEXT RECIEVED" , text);
+    roomManager.handleEditorText(socket, text);
+  });
+
   // Handle disconnect
   socket.on('disconnect', () => {
     console.log(`🔌 Player disconnected: ${socket.id}`);

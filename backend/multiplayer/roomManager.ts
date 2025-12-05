@@ -7,8 +7,8 @@ import type {
   InterServerEvents,
   SocketData 
 } from './types.js';
-import { generatePositionTasks } from '../tasks.js';
-
+import { generateDeleteTasks, generatePositionTasks } from '../tasks.js';
+import type { Task } from '../types.js';
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -16,7 +16,7 @@ export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
   private io: GameServer;
-  private NUM_TASKS: number = 2;
+  private NUM_TASKS: number = 10;
   constructor(io: GameServer) {
     this.io = io;
   }
@@ -38,17 +38,18 @@ export class RoomManager {
     const player: Player = {
       id: playerId,
       name: playerName,
-      cursorOffset: 0,
+      successIndicator: { cursorOffset: 0, editorText: ''},
       taskProgress: 0, // 0 to NUM_TASKS - 1
       isFinished: false,
     };
 
-    const tasks = generatePositionTasks(this.NUM_TASKS);
+    const positionTasks : Task[] = generatePositionTasks(this.NUM_TASKS);
+    const deleteTasks : Task[] = generateDeleteTasks(this.NUM_TASKS);
     
     const room: GameRoom = {
       id: roomId,
       players: new Map([[playerId, player]]),
-      tasks: tasks,
+      tasks: deleteTasks,
       state: 'waiting',
     };
     this.rooms.set(roomId, room);
@@ -89,7 +90,7 @@ export class RoomManager {
     const player: Player = {
       id: playerId,
       name: playerName,
-      cursorOffset: 0,
+      successIndicator: {cursorOffset: 0, editorText: ''},
       taskProgress: 0,
       isFinished: false,
     };
@@ -138,7 +139,8 @@ export class RoomManager {
     if (room.players.size === 0) {
       this.rooms.delete(roomId);
       console.log(`🗑️ Room ${roomId} deleted (empty)`);
-    } else if (room.state === 'racing' || room.state === 'countdown') {
+    } 
+    else if (room.state === 'racing' || room.state === 'countdown') {
       // If race was in progress, end it
       room.state = 'finished';
       this.endRace(roomId);
@@ -177,7 +179,7 @@ export class RoomManager {
 
     // Reset all players
     room.players.forEach(player => {
-      player.cursorOffset = 0;
+      player.successIndicator.cursorOffset = 0;
       player.isFinished = false;
       player.taskProgress = 0;
       player.finishTime = 0;
@@ -190,38 +192,77 @@ export class RoomManager {
   handleCursorMove(socket: GameSocket, offset: number): void {
     const roomId = socket.data.roomId;
     const playerId = socket.data.playerId;
-    console.log("check 1");
     if (!roomId || !playerId) return;
-    console.log("check 2");
+    const room = this.rooms.get(roomId);
+    if (!room || room.state !== 'racing') return;
+    const player = room.players.get(playerId);
+    if (!player || player.isFinished) return;
+    const currentTask = room.tasks[player.taskProgress];
+    //1. Task must exist and be navigate type
+    if (!currentTask || currentTask.type !== 'navigate') return;
+    player.successIndicator.cursorOffset = offset;
+    //2. Check if the player is at the current task offset, if so advance player task 
+    if (this.evaluateTaskCompletion(player, currentTask)) {
+      this.advancePlayerTask(socket, room, player, roomId);
+    }
+  }
+
+  handleEditorText(socket: GameSocket, text: string): void {
+    const roomId = socket.data.roomId;
+    const playerId = socket.data.playerId;
+    if (!roomId || !playerId) return;
     const room = this.rooms.get(roomId);
     if (!room || room.state !== 'racing') return;
 
     const player = room.players.get(playerId);
     if (!player || player.isFinished) return;
-    //1. Set the currentOffset, send to other players
-    console.log(player.cursorOffset, offset);
-    player.cursorOffset = offset;
-    //2. Check if the player is at the current task offset, if so increment the taskProgress, and send new task to the player and others
+    
+    // Check if the current task is a delete task
     const currentTask = room.tasks[player.taskProgress];
-    if (!currentTask || currentTask.targetOffset !== offset) {
-      return;
+    if (!currentTask || currentTask.type !== 'delete') return;
+    
+    // Update the player's editor text for validation
+    player.successIndicator.editorText = text;
+    console.log("TASK COMPLETETION CHECK", this.evaluateTaskCompletion(player, currentTask))
+
+    // Check if the task is completed
+    if (this.evaluateTaskCompletion(player, currentTask)) {
+      this.advancePlayerTask(socket, room, player, roomId);
+    } else if (text !== currentTask.codeSnippet) {
+      // Text changed but doesn't match expected result - reset to original
+      console.log("TEXT CHANGED BUT DOESN'T MATCH EXPECTED RESULT", text, currentTask.codeSnippet);
+      socket.emit('game:validation_failed', playerId);
     }
-    player.taskProgress+=1
-    //3. Send task progress and new task to the user
-    socket.emit('game:player_finished_task',{
+  }
+
+  private advancePlayerTask(socket: GameSocket, room: GameRoom, player: Player, roomId: string): void {
+    const playerId = player.id;
+    player.taskProgress += 1;
+    
+    // Reset editor text for next task
+    player.successIndicator.editorText = '';
+    
+    // Send task progress and new task to the user
+    console.log("player task progress", player.taskProgress);
+    console.log("new task", room.tasks[player.taskProgress]);
+    console.log("room tasks", room.tasks);
+    socket.emit('game:player_finished_task', {
       playerId,
       taskProgress: player.taskProgress,
       newTask: room.tasks[player.taskProgress]
-    })
-    //4. Send the progress to the opponents
+    });
+    
+    // Send the progress to the opponents
     this.io.to(roomId).emit('game:opponent_finished_task', {
       playerId,
       taskProgress: player.taskProgress,
-    })
-    //5. Check if the player has now finished all tasks, if so set isFinished to true and send the final results to the player and others
-    if (player.taskProgress !== this.NUM_TASKS){
-        return;
+    });
+    
+    // Check if the player has now finished all tasks
+    if (player.taskProgress !== this.NUM_TASKS) {
+      return;
     }
+    
     player.isFinished = true;
     player.finishTime = Date.now() - (room.startTime || 0);
 
@@ -237,6 +278,25 @@ export class RoomManager {
     // Check if all players finished
     if (this.allPlayersFinished(room)) {
       this.endRace(roomId);
+    }
+  }
+
+  private evaluateTaskCompletion(player: Player, currentTask: Task): boolean {
+    switch (currentTask.type) {
+      case 'navigate': {
+        return player.successIndicator.cursorOffset === currentTask.targetOffset;
+      }
+
+      case 'delete': {
+        console.log(player.successIndicator.editorText, "Player text");
+        console.log(currentTask.expectedResult);
+        return player.successIndicator.editorText === currentTask.expectedResult;
+      }
+
+      default: {
+        console.log("Task type not defined", currentTask);
+        return false;
+      }
     }
   }
 
