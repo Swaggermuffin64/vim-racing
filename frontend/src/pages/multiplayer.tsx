@@ -16,7 +16,6 @@ import { WaitingRoom } from '../components/WaitingRoom';
 import { RaceCountdown } from '../components/RaceCountdown';
 import { RaceResults } from '../components/RaceResults';
 import { targetHighlightExtension, setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
-import { opponentCursorExtension, setOpponentCursor } from '../extensions/opponentCursor';
 import { cursorTracker } from '../extensions/cursorTracker';
 import { readOnlyNavigation, setDeleteMode, allowReset } from '../extensions/readOnlyNavigation';
 
@@ -140,9 +139,7 @@ const MultiplayerGame: React.FC = () => {
   } = useGameSocket();
 
   const myEditorRef = useRef<HTMLDivElement>(null);
-  const opponentEditorRef = useRef<HTMLDivElement>(null);
   const myViewRef = useRef<EditorView | null>(null);
-  const opponentViewRef = useRef<EditorView | null>(null);
   const timerRef = useRef<number>(0);
   const [elapsedTime, setElapsedTime] = React.useState(0);
 
@@ -156,8 +153,6 @@ const MultiplayerGame: React.FC = () => {
     sendEditorTextRef.current = sendEditorText;
   }, [sendEditorText]);
 
-  // Find opponent player
-  const opponent = gameState.players.find(p => p.id !== gameState.myPlayerId);
   const me = gameState.players.find(p => p.id === gameState.myPlayerId);
 
   // Handle cursor movement in my editor (uses ref to always get latest sendCursorMove)
@@ -179,12 +174,15 @@ const MultiplayerGame: React.FC = () => {
   }, [gameState.roomState, gameState.startTime]);
 
   // Document change listener for delete task validation
-  const documentChangeListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged) {
-      const newText = update.state.doc.toString();
-      sendEditorTextRef.current(newText);
-    }
-  });
+  const documentChangeListener = React.useMemo(
+    () => EditorView.updateListener.of((update) => {
+      if (update.docChanged) {
+        const newText = update.state.doc.toString();
+        sendEditorTextRef.current(newText);
+      }
+    }),
+    []
+  );
 
   // Track the current task ID to detect task changes
   const currentTaskIdRef = useRef<string | null>(null);
@@ -243,7 +241,7 @@ const MultiplayerGame: React.FC = () => {
         myViewRef.current = null;
       }
     };
-  }, [gameState.roomState, gameState.task, handleCursorChange]);
+  }, [gameState.roomState, gameState.task, handleCursorChange, documentChangeListener]);
 
   // Handle task transitions (when a new task is received after completing one)
   useEffect(() => {
@@ -308,65 +306,13 @@ const MultiplayerGame: React.FC = () => {
     } else if (gameState.task.type === 'delete') {
       view.dispatch({
         effects: setTargetRange.of(gameState.task.targetRange),
-      });
+    });
     }
     
     // Clear the reset flag
     clearResetFlag();
   }, [gameState.shouldResetEditor, gameState.task, clearResetFlag]);
-
-  // Initialize opponent's editor (read-only view)
-  useEffect(() => {
-    if (gameState.roomState === 'racing' && opponentEditorRef.current && !opponentViewRef.current && gameState.task.id) {
-      opponentViewRef.current = new EditorView({
-        doc: gameState.task.codeSnippet,
-        parent: opponentEditorRef.current,
-        extensions: [
-          cpp(),
-          oneDark,
-          ...targetHighlightExtension,
-          ...opponentCursorExtension,  // Yellow cursor for opponent
-          lineNumbers(),
-          EditorView.editable.of(false),
-          EditorView.theme({
-            '&': {
-              fontSize: '14px',
-              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-            },
-          }),
-        ],
-      });
-
-      // Set target highlight
-      if (gameState.task.type === 'navigate') {
-        opponentViewRef.current.dispatch({
-          effects: setTargetPosition.of(gameState.task.targetOffset),
-        });
-      } else if (gameState.task.type === 'delete') {
-        opponentViewRef.current.dispatch({
-          effects: setTargetRange.of(gameState.task.targetRange),
-        });
-      }
-    }
-
-    return () => {
-      if (opponentViewRef.current) {
-        opponentViewRef.current.destroy();
-        opponentViewRef.current = null;
-      }
-    };
-  }, [gameState.roomState, gameState.task]);
-
   // Update opponent cursor position with yellow highlight
-  const opponentCursorOffset = opponent?.cursorOffset ?? 0;
-  
-  useEffect(() => {
-    if (opponentViewRef.current && gameState.roomState === 'racing') {
-      opponentViewRef.current.dispatch({
-        effects: setOpponentCursor.of(opponentCursorOffset),
-      });
-    }
-  }, [opponentCursorOffset, gameState.roomState]);
 
   // Format time display
   const formatTime = (ms: number): string => {

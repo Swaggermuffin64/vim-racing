@@ -1,5 +1,15 @@
 import type { PositionTask, DeleteTask, Position, Task} from './types.js';
 
+/**
+ * Remove empty lines from a code snippet
+ */
+function removeEmptyLines(code: string): string {
+  return code
+    .split('\n')
+    .filter(line => line.trim().length > 0)
+    .join('\n');
+}
+
 // Code snippets for vim racing
 const CODE_SNIPPETS: string[] = [
   `int factorial(int n) {
@@ -156,7 +166,7 @@ let taskIdCounter = 0;
  */
 export function generatePositionTask(): PositionTask {
   const snippetIndex = Math.floor(Math.random() * CODE_SNIPPETS.length);
-  const snippet = CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!;
+  const snippet = removeEmptyLines(CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!);
   const positions = findInterestingPositions(snippet);
   
   // Pick a random interesting position
@@ -176,7 +186,7 @@ export function generatePositionTask(): PositionTask {
 
 export function generateDeleteTask(): DeleteTask {
   const snippetIndex = Math.floor(Math.random() * CODE_SNIPPETS.length);
-  const snippet = CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!;
+  const snippet = removeEmptyLines(CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!);
   const { from, to } = findDeleteRange(snippet);
   // 'from' and 'to' are offsets that specify the region to delete
   // Make sure from <= to
