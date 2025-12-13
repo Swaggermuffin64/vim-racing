@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 interface LobbyProps {
   isConnected: boolean;
   isConnecting?: boolean;
+  useHathora?: boolean; // In Hathora mode, connection happens on room create/join
   error: string | null;
   onCreateRoom: (playerName: string) => void;
   onJoinRoom: (roomId: string, playerName: string) => void;
@@ -117,6 +118,7 @@ const styles: Record<string, React.CSSProperties> = {
 export const Lobby: React.FC<LobbyProps> = ({
   isConnected,
   isConnecting = false,
+  useHathora = false,
   error,
   onCreateRoom,
   onJoinRoom,
@@ -139,6 +141,10 @@ export const Lobby: React.FC<LobbyProps> = ({
   };
 
   const isLoading = isConnecting;
+  
+  // In Hathora mode, we don't need to be connected before creating/joining
+  // because the connection happens as part of that flow
+  const canInteract = useHathora ? true : isConnected;
 
   return (
     <div style={styles.container}>
@@ -149,14 +155,21 @@ export const Lobby: React.FC<LobbyProps> = ({
         <div
           style={{
             ...styles.dot,
-            background: isConnected ? '#00ff88' : '#ff6b6b',
-            boxShadow: isConnected
-              ? '0 0 8px #00ff88'
-              : '0 0 8px #ff6b6b',
+            background: useHathora 
+              ? (isConnecting ? '#ffaa00' : '#00ff88')
+              : (isConnected ? '#00ff88' : '#ff6b6b'),
+            boxShadow: useHathora
+              ? (isConnecting ? '0 0 8px #ffaa00' : '0 0 8px #00ff88')
+              : (isConnected ? '0 0 8px #00ff88' : '0 0 8px #ff6b6b'),
           }}
         />
-        <span style={{ color: isConnected ? '#00ff88' : '#ff6b6b' }}>
-          {isConnected ? 'Connected' : 'Connecting...'}
+        <span style={{ color: useHathora 
+          ? (isConnecting ? '#ffaa00' : '#00ff88')
+          : (isConnected ? '#00ff88' : '#ff6b6b') 
+        }}>
+          {useHathora 
+            ? (isConnecting ? 'Connecting to Hathora...' : 'Ready')
+            : (isConnected ? 'Connected' : 'Connecting...')}
         </span>
       </div>
 
@@ -179,10 +192,10 @@ export const Lobby: React.FC<LobbyProps> = ({
           <button
             style={{
               ...styles.button,
-              ...((!isConnected || !playerName.trim()) ? styles.buttonDisabled : {}),
+              ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
             }}
             onClick={() => playerName.trim() && setMode('create')}
-            disabled={!isConnected || !playerName.trim()}
+            disabled={!canInteract || !playerName.trim() || isLoading}
           >
             🏠 Create Room
           </button>
@@ -197,10 +210,10 @@ export const Lobby: React.FC<LobbyProps> = ({
             style={{
               ...styles.button,
               ...styles.buttonSecondary,
-              ...((!isConnected || !playerName.trim()) ? styles.buttonDisabled : {}),
+              ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
             }}
             onClick={() => playerName.trim() && setMode('join')}
-            disabled={!isConnected || !playerName.trim()}
+            disabled={!canInteract || !playerName.trim() || isLoading}
           >
             🚪 Join Room
           </button>
@@ -219,7 +232,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               ...(isLoading ? styles.buttonDisabled : {}),
             }}
             onClick={handleCreate}
-            disabled={!isConnected || isLoading}
+            disabled={!canInteract || isLoading}
           >
             {isLoading ? '⏳ Creating Room...' : 'Create & Get Room ID'}
           </button>
@@ -260,7 +273,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               ...((!roomCode.trim() || isLoading) ? styles.buttonDisabled : {}),
             }}
             onClick={handleJoin}
-            disabled={!isConnected || !roomCode.trim() || isLoading}
+            disabled={!canInteract || !roomCode.trim() || isLoading}
           >
             {isLoading ? '⏳ Joining...' : 'Join Room'}
           </button>

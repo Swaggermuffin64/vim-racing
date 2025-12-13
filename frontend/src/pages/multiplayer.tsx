@@ -329,6 +329,7 @@ const MultiplayerGame: React.FC = () => {
         <Lobby
           isConnected={isConnected}
           isConnecting={isConnecting}
+          useHathora={process.env.REACT_APP_USE_HATHORA === 'true'}
           error={error}
           onCreateRoom={createRoom}
           onJoinRoom={joinRoom}
