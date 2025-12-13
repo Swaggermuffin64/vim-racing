@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { HathoraCloud } from '@hathora/cloud-sdk-typescript';
 import type { GameState } from '../types/multiplayer';
 import { EMPTY_TASK } from '../types/multiplayer';
 
@@ -9,8 +8,17 @@ const USE_HATHORA = process.env.REACT_APP_USE_HATHORA === 'true';
 const LOCAL_SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 const HATHORA_APP_ID = process.env.REACT_APP_HATHORA_APP_ID || '';
 
-// Initialize Hathora client (only used if USE_HATHORA is true)
-const hathoraClient = USE_HATHORA ? new HathoraCloud({ appId: HATHORA_APP_ID }) : null;
+// Lazily import Hathora SDK only when needed to avoid Zod compatibility issues
+let hathoraClientPromise: Promise<any> | null = null;
+const getHathoraClient = async () => {
+  if (!USE_HATHORA) return null;
+  if (!hathoraClientPromise) {
+    hathoraClientPromise = import('@hathora/cloud-sdk-typescript').then(
+      (module) => new module.HathoraCloud({ appId: HATHORA_APP_ID })
+    );
+  }
+  return hathoraClientPromise;
+};
 
 interface UseGameSocketReturn {
   // State
@@ -205,6 +213,7 @@ export function useGameSocket(): UseGameSocketReturn {
 
   // Get Hathora connection info for a room
   const getHathoraConnectionInfo = useCallback(async (roomId: string): Promise<string> => {
+    const hathoraClient = await getHathoraClient();
     if (!hathoraClient) {
       throw new Error('Hathora client not initialized');
     }
@@ -226,11 +235,16 @@ export function useGameSocket(): UseGameSocketReturn {
 
   // Actions
   const createRoom = useCallback(async (playerName: string) => {
-    if (USE_HATHORA && hathoraClient) {
+    if (USE_HATHORA) {
       // Hathora flow: create room via API, then connect
       try {
         setIsConnecting(true);
         setError(null);
+
+        const hathoraClient = await getHathoraClient();
+        if (!hathoraClient) {
+          throw new Error('Hathora client not initialized');
+        }
 
         // Create a room in Hathora (Seattle region, closest to west coast)
         const { roomId } = await hathoraClient.roomsV2.createRoom({
@@ -274,7 +288,7 @@ export function useGameSocket(): UseGameSocketReturn {
   }, [connectSocket, getHathoraConnectionInfo]);
 
   const joinRoom = useCallback(async (roomId: string, playerName: string) => {
-    if (USE_HATHORA && hathoraClient) {
+    if (USE_HATHORA) {
       // Hathora flow: get connection info for existing room, then connect
       try {
         setIsConnecting(true);
