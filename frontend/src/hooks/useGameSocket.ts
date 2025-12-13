@@ -8,8 +8,18 @@ const USE_HATHORA = process.env.REACT_APP_USE_HATHORA === 'true';
 const LOCAL_SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
 const HATHORA_APP_ID = process.env.REACT_APP_HATHORA_APP_ID || '';
 
+// Debug: Log environment configuration on load
+console.log('🔧 Hathora Config:', {
+  USE_HATHORA,
+  HATHORA_APP_ID: HATHORA_APP_ID ? `${HATHORA_APP_ID.substring(0, 20)}...` : '(not set)',
+  LOCAL_SOCKET_URL,
+  RAW_USE_HATHORA: process.env.REACT_APP_USE_HATHORA,
+});
+
 // Lazily import Hathora SDK only when needed to avoid Zod compatibility issues
 let hathoraClientPromise: Promise<any> | null = null;
+let playerTokenPromise: Promise<string> | null = null;
+
 const getHathoraClient = async () => {
   if (!USE_HATHORA) return null;
   if (!hathoraClientPromise) {
@@ -18,6 +28,19 @@ const getHathoraClient = async () => {
     );
   }
   return hathoraClientPromise;
+};
+
+// Get or create anonymous player token for Lobbies API
+const getPlayerToken = async (): Promise<string> => {
+  if (!playerTokenPromise) {
+    playerTokenPromise = (async () => {
+      const client = await getHathoraClient();
+      if (!client) throw new Error('Hathora client not initialized');
+      const auth = await client.authV1.loginAnonymous(HATHORA_APP_ID);
+      return auth.token;
+    })();
+  }
+  return playerTokenPromise;
 };
 
 interface UseGameSocketReturn {
@@ -236,7 +259,7 @@ export function useGameSocket(): UseGameSocketReturn {
   // Actions
   const createRoom = useCallback(async (playerName: string) => {
     if (USE_HATHORA) {
-      // Hathora flow: create room via API, then connect
+      // Hathora flow: create lobby via Lobbies API (client-side friendly), then connect
       try {
         setIsConnecting(true);
         setError(null);
@@ -246,12 +269,24 @@ export function useGameSocket(): UseGameSocketReturn {
           throw new Error('Hathora client not initialized');
         }
 
-        // Create a room in Hathora (Seattle region, closest to west coast)
-        const { roomId } = await hathoraClient.roomsV2.createRoom({
-          region: 'Seattle',
-        });
+        // Get player token for Lobbies API authentication
+        console.log('🔑 Getting player token...');
+        const playerToken = await getPlayerToken();
+        console.log('✅ Got player token');
 
-        console.log('🎮 Hathora room created:', roomId);
+        // Create a lobby in Hathora using Lobbies API (doesn't require dev token)
+        console.log('🏠 Creating lobby...');
+        const lobby = await hathoraClient.lobbiesV3.createLobby(
+          { playerAuth: playerToken },
+          {
+            visibility: 'private',
+            region: 'Seattle',
+            roomConfig: JSON.stringify({ createdBy: playerName }),
+          }
+        );
+
+        const roomId = lobby.roomId;
+        console.log('🎮 Hathora lobby created:', roomId);
 
         // Wait for room to be ready and get connection info
         let connectionUrl: string | null = null;
@@ -274,9 +309,15 @@ export function useGameSocket(): UseGameSocketReturn {
 
         // Create room with Hathora roomId so backend uses the same ID
         socketRef.current?.emit('room:create', { playerName, roomId });
-      } catch (err) {
-        console.error('Failed to create Hathora room:', err);
-        setError('Failed to create room. Please try again.');
+      } catch (err: any) {
+        console.error('❌ Failed to create Hathora lobby:', err);
+        console.error('❌ Error details:', {
+          message: err?.message,
+          status: err?.status,
+          body: err?.body,
+          stack: err?.stack,
+        });
+        setError(`Failed to create room: ${err?.message || 'Unknown error'}`);
         setIsConnecting(false);
       }
     } else {
@@ -301,9 +342,14 @@ export function useGameSocket(): UseGameSocketReturn {
 
         // Join room using the Hathora roomId (same ID used by backend)
         socketRef.current?.emit('room:join', { roomId, playerName });
-      } catch (err) {
-        console.error('Failed to join Hathora room:', err);
-        setError('Failed to join room. Please check the room ID.');
+      } catch (err: any) {
+        console.error('❌ Failed to join Hathora room:', err);
+        console.error('❌ Error details:', {
+          message: err?.message,
+          status: err?.status,
+          body: err?.body,
+        });
+        setError(`Failed to join room: ${err?.message || 'Please check the room ID.'}`);
         setIsConnecting(false);
       }
     } else {
