@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 interface LobbyProps {
   isConnected: boolean;
+  isConnecting?: boolean;
   error: string | null;
   onCreateRoom: (playerName: string) => void;
   onJoinRoom: (roomId: string, playerName: string) => void;
@@ -115,6 +116,7 @@ const styles: Record<string, React.CSSProperties> = {
 
 export const Lobby: React.FC<LobbyProps> = ({
   isConnected,
+  isConnecting = false,
   error,
   onCreateRoom,
   onJoinRoom,
@@ -131,9 +133,12 @@ export const Lobby: React.FC<LobbyProps> = ({
 
   const handleJoin = () => {
     if (playerName.trim() && roomCode.trim()) {
-      onJoinRoom(roomCode.trim().toUpperCase(), playerName.trim());
+      // Pass room code as-is (Hathora IDs are case-sensitive)
+      onJoinRoom(roomCode.trim(), playerName.trim());
     }
   };
+
+  const isLoading = isConnecting;
 
   return (
     <div style={styles.container}>
@@ -209,11 +214,14 @@ export const Lobby: React.FC<LobbyProps> = ({
             Creating room as <strong style={{ color: '#00ff88' }}>{playerName}</strong>
           </p>
           <button
-            style={styles.button}
+            style={{
+              ...styles.button,
+              ...(isLoading ? styles.buttonDisabled : {}),
+            }}
             onClick={handleCreate}
-            disabled={!isConnected}
+            disabled={!isConnected || isLoading}
           >
-            Create & Get Room Code
+            {isLoading ? '⏳ Creating Room...' : 'Create & Get Room ID'}
           </button>
           <button
             style={{
@@ -224,6 +232,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               marginTop: '12px',
             }}
             onClick={() => setMode('select')}
+            disabled={isLoading}
           >
             ← Back
           </button>
@@ -238,22 +247,22 @@ export const Lobby: React.FC<LobbyProps> = ({
           </p>
           <input
             type="text"
-            placeholder="Enter room code..."
+            placeholder="Enter room ID..."
             value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            style={{ ...styles.input, textTransform: 'uppercase', letterSpacing: '4px', textAlign: 'center' }}
-            maxLength={6}
+            onChange={(e) => setRoomCode(e.target.value)}
+            style={{ ...styles.input, textAlign: 'center', fontSize: '14px' }}
+            maxLength={50}
           />
           <button
             style={{
               ...styles.button,
               ...styles.buttonSecondary,
-              ...(!roomCode.trim() ? styles.buttonDisabled : {}),
+              ...((!roomCode.trim() || isLoading) ? styles.buttonDisabled : {}),
             }}
             onClick={handleJoin}
-            disabled={!isConnected || !roomCode.trim()}
+            disabled={!isConnected || !roomCode.trim() || isLoading}
           >
-            Join Room
+            {isLoading ? '⏳ Joining...' : 'Join Room'}
           </button>
           <button
             style={{
@@ -264,6 +273,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               marginTop: '12px',
             }}
             onClick={() => setMode('select')}
+            disabled={isLoading}
           >
             ← Back
           </button>

@@ -1,0 +1,32 @@
+name: Deploy Backend to Hathora
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/hathora-deploy.yml'
+
+jobs:
+  deploy:
+    name: Deploy Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Hathora CLI
+        run: npm install -g @hathora/cli
+
+      - name: Deploy to Hathora
+        run: hathora deploy --appId ${{ secrets.HATHORA_APP_ID }} --token ${{ secrets.HATHORA_TOKEN }}
+

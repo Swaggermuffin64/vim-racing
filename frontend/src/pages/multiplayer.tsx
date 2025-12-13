@@ -128,6 +128,7 @@ const styles: Record<string, React.CSSProperties> = {
 const MultiplayerGame: React.FC = () => {
   const {
     isConnected,
+    isConnecting,
     gameState,
     error,
     createRoom,
@@ -327,6 +328,7 @@ const MultiplayerGame: React.FC = () => {
       <div style={styles.container}>
         <Lobby
           isConnected={isConnected}
+          isConnecting={isConnecting}
           error={error}
           onCreateRoom={createRoom}
           onJoinRoom={joinRoom}

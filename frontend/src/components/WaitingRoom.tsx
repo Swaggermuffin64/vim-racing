@@ -35,12 +35,14 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '2px',
   },
   roomCode: {
-    fontSize: '48px',
-    fontWeight: 800,
+    fontSize: '18px',
+    fontWeight: 600,
     color: '#00ff88',
     fontFamily: '"JetBrains Mono", monospace',
-    letterSpacing: '8px',
+    letterSpacing: '1px',
     textShadow: '0 0 20px rgba(0, 255, 136, 0.5)',
+    wordBreak: 'break-all' as const,
+    padding: '8px 0',
   },
   shareText: {
     fontSize: '14px',
@@ -138,10 +140,10 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
       <h1 style={styles.title}>🏠 Waiting for Opponent</h1>
 
       <div style={styles.roomCodeCard} onClick={copyRoomCode}>
-        <div style={styles.roomCodeLabel}>Room Code</div>
+        <div style={styles.roomCodeLabel}>Room ID</div>
         <div style={styles.roomCode}>{roomId}</div>
         <div style={styles.shareText}>
-          📋 Click to copy • Share with a friend!
+          📋 Click to copy • Share this ID with a friend!
         </div>
       </div>
 

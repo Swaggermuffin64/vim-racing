@@ -1,13 +1,21 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { HathoraCloud } from '@hathora/cloud-sdk-typescript';
 import type { GameState } from '../types/multiplayer';
 import { EMPTY_TASK } from '../types/multiplayer';
 
-const SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+// For local development, use direct connection. For production, use Hathora.
+const USE_HATHORA = process.env.REACT_APP_USE_HATHORA === 'true';
+const LOCAL_SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+const HATHORA_APP_ID = process.env.REACT_APP_HATHORA_APP_ID || '';
+
+// Initialize Hathora client (only used if USE_HATHORA is true)
+const hathoraClient = USE_HATHORA ? new HathoraCloud({ appId: HATHORA_APP_ID }) : null;
 
 interface UseGameSocketReturn {
   // State
   isConnected: boolean;
+  isConnecting: boolean;
   gameState: GameState;
   error: string | null;
   
@@ -36,25 +44,20 @@ const initialGameState: GameState = {
 export function useGameSocket(): UseGameSocketReturn {
   const socketRef = useRef<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState>(initialGameState);
 
-  // Initialize socket connection
-  useEffect(() => {
-    const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-    });
-
-    socketRef.current = socket;
-
+  // Setup socket event listeners
+  const setupSocketListeners = useCallback((socket: Socket) => {
     socket.on('connect', () => {
       console.log('🔌 Connected to server, socket id:', socket.id);
       setIsConnected(true);
-      setGameState(prev => {
-        const newState = { ...prev, myPlayerId: socket.id || null };
-        console.log('Updated gameState with myPlayerId:', newState);
-        return newState;
-      });
+      setIsConnecting(false);
+      setGameState(prev => ({
+        ...prev,
+        myPlayerId: socket.id || null,
+      }));
     });
 
     socket.on('disconnect', () => {
@@ -115,25 +118,25 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
-    socket.on('game:start', ({ startTime, initialTask}) => {
+    socket.on('game:start', ({ startTime, initialTask }) => {
       console.log('🏁 Race started!', initialTask);
       setGameState(prev => ({
         ...prev,
         roomState: 'racing',
         countdown: null,
         startTime,
-        task: initialTask 
+        task: initialTask,
       }));
     });
 
-    socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask}) => {
+    socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask }) => {
       console.log('Player', playerId, 'finished task', taskProgress);
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
           p.id === playerId ? { ...p, taskProgress: taskProgress } : p
         ),
-        task: newTask 
+        task: newTask,
       }));
     });
 
@@ -173,10 +176,47 @@ export function useGameSocket(): UseGameSocketReturn {
         shouldResetEditor: true,
       }));
     });
+  }, []);
 
-    return () => {
-      socket.disconnect();
-    };
+  // Connect to socket (local or Hathora)
+  const connectSocket = useCallback(async (url: string) => {
+    // Disconnect existing socket if any
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+
+    const socket = io(url, {
+      transports: ['websocket', 'polling'],
+    });
+
+    socketRef.current = socket;
+    setupSocketListeners(socket);
+  }, [setupSocketListeners]);
+
+  // For local development: connect on mount
+  useEffect(() => {
+    if (!USE_HATHORA) {
+      connectSocket(LOCAL_SOCKET_URL);
+      return () => {
+        socketRef.current?.disconnect();
+      };
+    }
+  }, [connectSocket]);
+
+  // Get Hathora connection info for a room
+  const getHathoraConnectionInfo = useCallback(async (roomId: string): Promise<string> => {
+    if (!hathoraClient) {
+      throw new Error('Hathora client not initialized');
+    }
+
+    const connectionInfo = await hathoraClient.roomsV2.getConnectionInfo(roomId);
+    
+    if (connectionInfo.status !== 'active' || !connectionInfo.exposedPort) {
+      throw new Error('Room not ready yet');
+    }
+
+    const { host, port } = connectionInfo.exposedPort;
+    return `https://${host}:${port}`;
   }, []);
 
   // Debug: Log gameState changes (remove in production)
@@ -185,17 +225,80 @@ export function useGameSocket(): UseGameSocketReturn {
   }, [gameState]);
 
   // Actions
-  const createRoom = useCallback((playerName: string) => {
-    if (socketRef.current) {
-      socketRef.current.emit('room:create', { playerName });
-    }
-  }, []);
+  const createRoom = useCallback(async (playerName: string) => {
+    if (USE_HATHORA && hathoraClient) {
+      // Hathora flow: create room via API, then connect
+      try {
+        setIsConnecting(true);
+        setError(null);
 
-  const joinRoom = useCallback((roomId: string, playerName: string) => {
-    if (socketRef.current) {
-      socketRef.current.emit('room:join', { roomId: roomId.toUpperCase(), playerName });
+        // Create a room in Hathora (Seattle region, closest to west coast)
+        const { roomId } = await hathoraClient.roomsV2.createRoom({
+          region: 'Seattle',
+        });
+
+        console.log('🎮 Hathora room created:', roomId);
+
+        // Wait for room to be ready and get connection info
+        let connectionUrl: string | null = null;
+        for (let i = 0; i < 10; i++) {
+          try {
+            connectionUrl = await getHathoraConnectionInfo(roomId);
+            break;
+          } catch {
+            // Room not ready yet, wait and retry
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+
+        if (!connectionUrl) {
+          throw new Error('Failed to get connection info');
+        }
+
+        // Connect to the Hathora server
+        await connectSocket(connectionUrl);
+
+        // Create room with Hathora roomId so backend uses the same ID
+        socketRef.current?.emit('room:create', { playerName, roomId });
+      } catch (err) {
+        console.error('Failed to create Hathora room:', err);
+        setError('Failed to create room. Please try again.');
+        setIsConnecting(false);
+      }
+    } else {
+      // Local flow: just emit to existing socket (backend will generate roomId)
+      if (socketRef.current) {
+        socketRef.current.emit('room:create', { playerName });
+      }
     }
-  }, []);
+  }, [connectSocket, getHathoraConnectionInfo]);
+
+  const joinRoom = useCallback(async (roomId: string, playerName: string) => {
+    if (USE_HATHORA && hathoraClient) {
+      // Hathora flow: get connection info for existing room, then connect
+      try {
+        setIsConnecting(true);
+        setError(null);
+
+        const connectionUrl = await getHathoraConnectionInfo(roomId);
+
+        // Connect to the Hathora server
+        await connectSocket(connectionUrl);
+
+        // Join room using the Hathora roomId (same ID used by backend)
+        socketRef.current?.emit('room:join', { roomId, playerName });
+      } catch (err) {
+        console.error('Failed to join Hathora room:', err);
+        setError('Failed to join room. Please check the room ID.');
+        setIsConnecting(false);
+      }
+    } else {
+      // Local flow: just emit to existing socket
+      if (socketRef.current) {
+        socketRef.current.emit('room:join', { roomId: roomId.toUpperCase(), playerName });
+      }
+    }
+  }, [connectSocket, getHathoraConnectionInfo]);
 
   const leaveRoom = useCallback(() => {
     if (socketRef.current) {
@@ -229,6 +332,7 @@ export function useGameSocket(): UseGameSocketReturn {
 
   return {
     isConnected,
+    isConnecting,
     gameState,
     error,
     createRoom,
