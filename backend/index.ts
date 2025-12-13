@@ -11,13 +11,18 @@ import type {
 } from './multiplayer/types.js';
 import { RoomManager } from './multiplayer/roomManager.js';
 
-const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '3001', 10);
+// Hathora injects HATHORA_PORT, fall back to BACKEND_PORT or PORT for other environments
+const BACKEND_PORT = parseInt(
+  process.env.HATHORA_PORT || process.env.PORT || process.env.BACKEND_PORT || '3001',
+  10
+);
 
 // CORS origins - add your production frontend URL to FRONTEND_URL env var
+// FRONTEND_URL can be comma-separated for multiple origins
 const CORS_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
-  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map(url => url.trim()) : []),
 ];
 
 // Create Fastify with its own server
@@ -100,8 +105,8 @@ io.on('connection', (socket) => {
   console.log(`🔌 Player connected: ${socket.id}`);
 
   // Create a new room
-  socket.on('room:create', ({ playerName }) => {
-    const room = roomManager.createRoom(socket, playerName);
+  socket.on('room:create', ({ playerName, roomId: externalRoomId }) => {
+    const room = roomManager.createRoom(socket, playerName, externalRoomId);
     const player = room.players.get(socket.id)!;
     
     socket.emit('room:created', { 
@@ -146,4 +151,29 @@ io.on('connection', (socket) => {
 });
 
 console.log(`\n🏎️  Vim Racing BACKEND running at http://localhost:${BACKEND_PORT}`);
-console.log(`🔌 WebSocket server ready\n`);
+console.log(`🔌 WebSocket server ready`);
+if (process.env.HATHORA_PORT) {
+  console.log(`🎮 Running in Hathora environment`);
+}
+console.log('');
+
+// Graceful shutdown handling (important for Hathora scaling)
+const shutdown = async (signal: string) => {
+  console.log(`\n${signal} received, shutting down gracefully...`);
+  
+  // Close all socket connections
+  io.disconnectSockets(true);
+  
+  // Close the Socket.IO server
+  io.close(() => {
+    console.log('Socket.IO server closed');
+  });
+  
+  // Close Fastify
+  await fastify.close();
+  console.log('Server shutdown complete');
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

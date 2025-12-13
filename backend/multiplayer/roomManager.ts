@@ -44,8 +44,8 @@ export class RoomManager {
     return code;
   }
 
-  createRoom(socket: GameSocket, playerName: string): GameRoom {
-    const roomId = this.generateRoomId();
+  createRoom(socket: GameSocket, playerName: string, externalRoomId?: string): GameRoom {
+    const roomId = externalRoomId || this.generateRoomId();
     const playerId = socket.id;
     
     const player: Player = {

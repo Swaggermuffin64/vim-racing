@@ -1,9 +1,41 @@
+# Dependencies
 node_modules
+
+# Build output (we rebuild in container)
 dist
-*.log
+
+# Git
 .git
 .gitignore
+
+# Environment files
 .env
 .env.*
-README.md
+.env.local
 
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Documentation
+README.md
+WARP.md
+*.md
+
+# Deployment configs (not needed in container)
+fly.toml
+hathora.yml
+docker-compose.yml
+Dockerfile*
+
+# Testing
+coverage
+.nyc_output
