@@ -16,7 +16,7 @@ import { cursorTracker } from '../extensions/cursorTracker';
 import { readOnlyNavigation } from '../extensions/readOnlyNavigation';
 import { TaskBanner } from '../components/TaskBanner';
 
-const API_BASE = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 // Compartment for reconfigurable line numbers
 const lineNumbersCompartment = new Compartment();

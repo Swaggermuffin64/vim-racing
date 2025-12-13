@@ -4,16 +4,17 @@ import type { GameState } from '../types/multiplayer';
 import { EMPTY_TASK } from '../types/multiplayer';
 
 // For local development, use direct connection. For production, use Hathora.
-const USE_HATHORA = process.env.REACT_APP_USE_HATHORA === 'true';
-const LOCAL_SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:3001';
-const HATHORA_APP_ID = process.env.REACT_APP_HATHORA_APP_ID || '';
+const USE_HATHORA = import.meta.env.VITE_USE_HATHORA === 'true';
+const LOCAL_SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const HATHORA_APP_ID = import.meta.env.VITE_HATHORA_APP_ID || '';
 
 // Debug: Log environment configuration on load
 console.log('🔧 Hathora Config:', {
   USE_HATHORA,
   HATHORA_APP_ID: HATHORA_APP_ID ? `${HATHORA_APP_ID.substring(0, 20)}...` : '(not set)',
   LOCAL_SOCKET_URL,
-  RAW_USE_HATHORA: process.env.REACT_APP_USE_HATHORA,
+  RAW_USE_HATHORA: import.meta.env.VITE_USE_HATHORA,
+  
 });
 
 // Lazily import Hathora SDK only when needed to avoid Zod compatibility issues

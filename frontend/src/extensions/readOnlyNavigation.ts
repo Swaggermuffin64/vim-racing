@@ -50,7 +50,7 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
     // but block insertions
     let isDeletionOnly = true;
     
-    tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+    tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
       // If inserted text is non-empty and we're not replacing existing text
       // with shorter text, it's an insertion
       if (inserted.length > 0 && (toA - fromA) < inserted.length) {
