@@ -237,15 +237,45 @@ export class RoomManager {
     
     // Update the player's editor text for validation
     player.successIndicator.editorText = text;
-    console.log("TASK COMPLETETION CHECK", this.evaluateTaskCompletion(player, currentTask))
 
     // Check if the task is completed
     if (this.evaluateTaskCompletion(player, currentTask)) {
+      console.log('✅ [Backend] Task complete! Text matches expected result');
       this.advancePlayerTask(socket, room, player, roomId);
-    } else if (text !== currentTask.codeSnippet) {
-      // Text changed but doesn't match expected result - reset to original
-      console.log("TEXT CHANGED BUT DOESN'T MATCH EXPECTED RESULT", text, currentTask.codeSnippet);
+      return;
+    }
+    
+    // Validate partial deletion: prefix and suffix must remain intact
+    // Only the characters within targetRange should be deleted
+    const { codeSnippet, targetRange } = currentTask;
+    const prefix = codeSnippet.substring(0, targetRange.from);
+    const suffix = codeSnippet.substring(targetRange.to);
+    
+    // Check if the text is a valid partial deletion
+    const startsWithPrefix = text.startsWith(prefix);
+    const endsWithSuffix = text.endsWith(suffix);
+    const validLength = text.length >= prefix.length + suffix.length && text.length <= codeSnippet.length;
+    
+    const isValidPartial = startsWithPrefix && endsWithSuffix && validLength;
+    
+    console.log('🔍 [Backend] Validating partial deletion:', {
+      textLength: text.length,
+      originalLength: codeSnippet.length,
+      targetRange,
+      prefixLength: prefix.length,
+      suffixLength: suffix.length,
+      startsWithPrefix,
+      endsWithSuffix,
+      validLength,
+      isValidPartial,
+    });
+    
+    if (!isValidPartial) {
+      // Invalid edit - something outside the target range was modified
+      console.log('❌ [Backend] Invalid edit - resetting editor');
       socket.emit('game:validation_failed', playerId);
+    } else {
+      console.log('✅ [Backend] Valid partial deletion, continuing...');
     }
   }
 

@@ -17,7 +17,7 @@ import { RaceCountdown } from '../components/RaceCountdown';
 import { RaceResults } from '../components/RaceResults';
 import { targetHighlightExtension, setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
 import { cursorTracker } from '../extensions/cursorTracker';
-import { readOnlyNavigation, setDeleteMode, allowReset } from '../extensions/readOnlyNavigation';
+import { readOnlyNavigation, setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
 
 // Line numbers compartment for relative mode
 const lineNumbersCompartment = new Compartment();
@@ -368,6 +368,7 @@ const MultiplayerGame: React.FC = () => {
           effects: [
             setTargetRange.of(gameState.task.targetRange),
             setDeleteMode.of(true),
+            setAllowedDeleteRange.of(gameState.task.targetRange),
           ],
         });
       }
@@ -410,6 +411,7 @@ const MultiplayerGame: React.FC = () => {
         effects: [
           setTargetPosition.of(gameState.task.targetOffset),
           setDeleteMode.of(false),
+          setAllowedDeleteRange.of(null),
         ],
       });
     } else if (gameState.task.type === 'delete') {
@@ -417,6 +419,7 @@ const MultiplayerGame: React.FC = () => {
         effects: [
           setTargetRange.of(gameState.task.targetRange),
           setDeleteMode.of(true),
+          setAllowedDeleteRange.of(gameState.task.targetRange),
         ],
       });
     }
