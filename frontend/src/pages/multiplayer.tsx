@@ -110,6 +110,36 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     fontWeight: 600,
   },
+  waitingContainer: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '300px',
+    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+    border: '1px solid #0f3460',
+    borderRadius: '8px',
+    padding: '32px',
+  },
+  waitingTitle: {
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#00ff88',
+    marginBottom: '16px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  waitingText: {
+    fontSize: '16px',
+    color: '#888',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  waitingTime: {
+    fontSize: '32px',
+    fontWeight: 700,
+    color: '#00ff88',
+    marginTop: '16px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
   opponentCursor: {
     position: 'relative' as const,
   },
@@ -282,6 +312,14 @@ const MultiplayerGame: React.FC = () => {
     }
   }, [gameState.task]);
 
+  // Clean up editor when player finishes
+  useEffect(() => {
+    if (me?.isFinished && myViewRef.current) {
+      myViewRef.current.destroy();
+      myViewRef.current = null;
+    }
+  }, [me?.isFinished]);
+
   // Handle validation failure - reset editor to original text from task
   useEffect(() => {
     if (!gameState.shouldResetEditor || !myViewRef.current || !gameState.task.id) return;
@@ -393,9 +431,17 @@ const MultiplayerGame: React.FC = () => {
                 </span>
               )}
             </div>
-            <div style={styles.editorWrapper}>
-              <div ref={myEditorRef} />
-            </div>
+            {me?.isFinished ? (
+              <div style={styles.waitingContainer}>
+                <div style={styles.waitingTitle}>🎉 Finished!</div>
+                <div style={styles.waitingText}>Waiting for other players...</div>
+                <div style={styles.waitingTime}>{formatTime(me.finishTime || 0)}</div>
+              </div>
+            ) : (
+              <div style={styles.editorWrapper}>
+                <div ref={myEditorRef} />
+              </div>
+            )}
           </div>
  
           {/* Show all players except me (opponents) and their task progress */}

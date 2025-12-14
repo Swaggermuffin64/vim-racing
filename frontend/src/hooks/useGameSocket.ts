@@ -189,6 +189,8 @@ export function useGameSocket(): UseGameSocketReturn {
         players: prev.players.map(p =>
           p.id === playerId ? { ...p, isFinished: true, finishTime: time } : p
         ),
+        // Only clear task if the local player finished
+        task: playerId === prev.myPlayerId ? EMPTY_TASK : prev.task,
       }));
     });
 
