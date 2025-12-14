@@ -170,7 +170,6 @@ export function useGameSocket(): UseGameSocketReturn {
       console.log('⏱️ Countdown:', seconds);
       setGameState(prev => ({
         ...prev,
-        readyToPlay: false,
         roomState: 'countdown',
         countdown: seconds,
       }));
@@ -185,7 +184,6 @@ export function useGameSocket(): UseGameSocketReturn {
         startTime,
         task: initialTask,
         num_tasks,
-        players: prev.players.map(p => ({ ...p, readyToPlay: false })),
       }));
     });
 
@@ -217,6 +215,7 @@ export function useGameSocket(): UseGameSocketReturn {
         players: prev.players.map(p =>
           p.id === playerId ? { ...p, isFinished: true, finishTime: time } : p
         ),
+
         // Only clear task if the local player finished
         task: playerId === prev.myPlayerId ? EMPTY_TASK : prev.task,
       }));
@@ -228,6 +227,7 @@ export function useGameSocket(): UseGameSocketReturn {
         ...prev,
         roomState: 'finished',
         rankings,
+        players: prev.players.map(p => ({ ...p,cursorOffset: 0, taskProgress: 0, isFinished: false, readyToPlay: false })),
       }));
     });
 

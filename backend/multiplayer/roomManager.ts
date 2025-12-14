@@ -167,9 +167,15 @@ export class RoomManager {
     const player = room.players.get(playerId);
     if (!player) return;
     player.readyToPlay = true;
+    room.state = 'waiting';
     this.io.to(roomId).emit('room:player_ready', { playerId });
     console.log("all players", room.players);
     // Check to see if all players are ready
+    const playerCount = room.players.size;
+    if (playerCount < 2) {
+      console.log("Waiting for other players to join...");
+      return;
+    }
     const allReady = Array.from(room.players.values()).every(p => p.readyToPlay);
     if (!allReady) {
       console.log("Waiting for other players to be ready...");
@@ -177,7 +183,7 @@ export class RoomManager {
     }
     
     // All players are ready - reset room, then start countdown
-    console.log("Play again consensus! Resetting room, then starting countdown.");
+    console.log("All players ready! Resetting room, then starting countdown.");
     this.resetRoom(socket);
     this.startCountdown(roomId);
   }
