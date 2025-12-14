@@ -8,6 +8,26 @@ interface RaceResultsProps {
   onLeave: () => void;
 }
 
+const colors = {
+  bgDark: '#0a0a0f',
+  bgGradientStart: '#0f172a',
+  bgGradientEnd: '#1e1b4b',
+  
+  accent: '#a78bfa',
+  accentLight: '#c4b5fd',
+  accentGlow: 'rgba(167, 139, 250, 0.25)',
+  
+  textPrimary: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  
+  border: '#334155',
+  
+  gold: '#fbbf24',
+  silver: '#94a3b8',
+  bronze: '#d97706',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed' as const,
@@ -20,21 +40,28 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
+    backdropFilter: 'blur(4px)',
   },
   container: {
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-    border: '2px solid #333',
-    borderRadius: '16px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '20px',
     padding: '48px',
-    maxWidth: '400px',
+    maxWidth: '420px',
     width: '100%',
     textAlign: 'center' as const,
   },
   title: {
-    fontSize: '32px',
-    fontWeight: 800,
-    marginBottom: '32px',
+    fontSize: '28px',
+    fontWeight: 700,
+    marginBottom: '8px',
     fontFamily: '"JetBrains Mono", monospace',
+    color: colors.textPrimary,
+  },
+  subtitle: {
+    fontSize: '15px',
+    color: colors.textSecondary,
+    marginBottom: '32px',
   },
   rankingList: {
     marginBottom: '32px',
@@ -43,28 +70,30 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '8px',
+    padding: '16px 20px',
+    borderRadius: '12px',
+    marginBottom: '10px',
   },
   position: {
-    fontSize: '24px',
+    fontSize: '22px',
     fontWeight: 700,
-    width: '50px',
+    width: '44px',
+    textAlign: 'left' as const,
   },
   playerInfo: {
     flex: 1,
     textAlign: 'left' as const,
-    marginLeft: '16px',
+    marginLeft: '12px',
   },
   playerName: {
-    fontSize: '18px',
+    fontSize: '16px',
     fontWeight: 600,
-    color: '#e0e0e0',
+    color: colors.textPrimary,
+    fontFamily: '"JetBrains Mono", monospace',
   },
   time: {
-    fontSize: '14px',
-    color: '#888',
+    fontSize: '13px',
+    color: colors.textMuted,
     marginTop: '4px',
     fontFamily: '"JetBrains Mono", monospace',
   },
@@ -77,25 +106,25 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '14px 24px',
     fontSize: '14px',
     fontWeight: 600,
-    borderRadius: '8px',
+    borderRadius: '10px',
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
     transition: 'all 0.2s ease',
   },
   primaryButton: {
-    background: 'linear-gradient(135deg, #00ff88 0%, #00cc6a 100%)',
+    background: colors.accent,
     border: 'none',
-    color: '#1a1a2e',
+    color: colors.bgDark,
   },
   secondaryButton: {
     background: 'transparent',
-    border: '1px solid #333',
-    color: '#888',
+    border: `1px solid ${colors.border}`,
+    color: colors.textMuted,
   },
 };
 
 const positionEmojis = ['🥇', '🥈', '🥉'];
-const positionColors = ['#ffd700', '#c0c0c0', '#cd7f32'];
+const positionColors = [colors.gold, colors.silver, colors.bronze];
 
 export const RaceResults: React.FC<RaceResultsProps> = ({
   rankings,
@@ -105,25 +134,30 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
 }) => {
   const winner = rankings[0];
   const isWinner = winner?.playerId === myPlayerId;
-  console.log("myPlayerId", myPlayerId);
-  console.log("rankings", rankings);
+  
   const formatTime = (ms: number): string => {
     if (ms === 0) return 'DNF';
     const seconds = ms / 1000;
     return `${seconds.toFixed(2)}s`;
   };
 
+  const getMyPosition = () => {
+    const idx = rankings.findIndex(r => r.playerId === myPlayerId);
+    return idx >= 0 ? idx + 1 : null;
+  };
+
   return (
     <div style={styles.overlay}>
       <div style={styles.container}>
-        <div
-          style={{
-            ...styles.title,
-            color: isWinner ? '#00ff88' : '#ff6b6b',
-          }}
-        >
-          {isWinner ? '🎉 You Win!' : '😢 You Lose'}
+        <div style={styles.title}>
+          {isWinner ? '🎉 Victory!' : 'Race Complete'}
         </div>
+        <p style={styles.subtitle}>
+          {isWinner 
+            ? 'Congratulations, you won!' 
+            : `You finished #${getMyPosition()}`
+          }
+        </p>
 
         <div style={styles.rankingList}>
           {rankings.map((ranking, index) => (
@@ -131,20 +165,18 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
               key={ranking.playerId}
               style={{
                 ...styles.rankingItem,
-                background:
-                  ranking.playerId === myPlayerId
-                    ? 'rgba(0, 255, 136, 0.1)'
-                    : '#0a0a0f',
-                border:
-                  ranking.playerId === myPlayerId
-                    ? '1px solid #00ff88'
-                    : '1px solid transparent',
+                background: ranking.playerId === myPlayerId
+                  ? `${colors.accent}15`
+                  : colors.bgDark,
+                border: ranking.playerId === myPlayerId
+                  ? `1px solid ${colors.accent}40`
+                  : `1px solid transparent`,
               }}
             >
               <div
                 style={{
                   ...styles.position,
-                  color: positionColors[index] || '#888',
+                  color: positionColors[index] || colors.textMuted,
                 }}
               >
                 {positionEmojis[index] || `#${index + 1}`}
@@ -152,7 +184,9 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
               <div style={styles.playerInfo}>
                 <div style={styles.playerName}>
                   {ranking.playerName}
-                  {ranking.playerId === myPlayerId && ' (You)'}
+                  {ranking.playerId === myPlayerId && (
+                    <span style={{ color: colors.textMuted, fontWeight: 400 }}> (You)</span>
+                  )}
                 </div>
                 <div style={styles.time}>{formatTime(ranking.time)}</div>
               </div>

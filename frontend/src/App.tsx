@@ -4,10 +4,28 @@ import VimEditor from './pages/vim-editor';
 import MultiplayerGame from './pages/multiplayer';
 import './App.css';
 
+// Shared color palette
+const colors = {
+  bgDark: '#0a0a0f',
+  bgGradientStart: '#0f172a',
+  bgGradientEnd: '#1e1b4b',
+  
+  accent: '#a78bfa',
+  accentLight: '#c4b5fd',
+  accentGlow: 'rgba(167, 139, 250, 0.25)',
+  
+  textPrimary: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  
+  border: '#334155',
+  borderHover: '#475569',
+};
+
 const homeStyles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    background: '#0a0a0f',
+    background: `linear-gradient(180deg, ${colors.bgDark} 0%, #0f0f1a 100%)`,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -15,49 +33,52 @@ const homeStyles: Record<string, React.CSSProperties> = {
     padding: '32px',
   },
   title: {
-    fontSize: '64px',
+    fontSize: '72px',
     fontWeight: 800,
-    color: '#e0e0e0',
+    color: colors.textPrimary,
     marginBottom: '16px',
     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+    letterSpacing: '-2px',
   },
   subtitle: {
     fontSize: '20px',
-    color: '#888',
-    marginBottom: '48px',
+    color: colors.textSecondary,
+    marginBottom: '56px',
     textAlign: 'center',
+    fontFamily: '"JetBrains Mono", monospace',
   },
   buttons: {
     display: 'flex',
-    gap: '24px',
+    gap: '32px',
     flexWrap: 'wrap',
     justifyContent: 'center',
   },
   card: {
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-    border: '1px solid #0f3460',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
     borderRadius: '16px',
-    padding: '32px',
-    width: '280px',
+    padding: '36px',
+    width: '300px',
     textDecoration: 'none',
     transition: 'all 0.3s ease',
     cursor: 'pointer',
   },
   cardIcon: {
-    fontSize: '48px',
-    marginBottom: '16px',
+    fontSize: '52px',
+    marginBottom: '20px',
   },
   cardTitle: {
     fontSize: '24px',
     fontWeight: 700,
-    color: '#e0e0e0',
-    marginBottom: '8px',
+    color: colors.textPrimary,
+    marginBottom: '12px',
     fontFamily: '"JetBrains Mono", monospace',
   },
   cardDescription: {
     fontSize: '14px',
-    color: '#888',
-    lineHeight: 1.5,
+    color: colors.textMuted,
+    lineHeight: 1.6,
+    fontFamily: '"JetBrains Mono", monospace',
   },
 };
 
@@ -75,11 +96,13 @@ function Home() {
             style={homeStyles.card}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.borderColor = '#00ff88';
+              e.currentTarget.style.borderColor = colors.borderHover;
+              e.currentTarget.style.boxShadow = `0 8px 24px ${colors.accentGlow}`;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = '#0f3460';
+              e.currentTarget.style.borderColor = colors.border;
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
             <div style={homeStyles.cardIcon}>🎯</div>
@@ -95,11 +118,13 @@ function Home() {
             style={homeStyles.card}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.borderColor = '#ff6b6b';
+              e.currentTarget.style.borderColor = colors.borderHover;
+              e.currentTarget.style.boxShadow = `0 8px 24px ${colors.accentGlow}`;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = '#0f3460';
+              e.currentTarget.style.borderColor = colors.border;
+              e.currentTarget.style.boxShadow = 'none';
             }}
           >
             <div style={homeStyles.cardIcon}>🏎️</div>

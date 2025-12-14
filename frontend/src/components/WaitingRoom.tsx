@@ -7,111 +7,141 @@ interface WaitingRoomProps {
   onLeave: () => void;
 }
 
+const colors = {
+  bgDark: '#0a0a0f',
+  bgGradientStart: '#0f172a',
+  bgGradientEnd: '#1e1b4b',
+  
+  accent: '#a78bfa',
+  accentLight: '#c4b5fd',
+  accentGlow: 'rgba(167, 139, 250, 0.25)',
+  
+  textPrimary: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  
+  border: '#334155',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    maxWidth: '500px',
+    maxWidth: '480px',
     margin: '0 auto',
-    padding: '48px 32px',
+    padding: '64px 32px',
     textAlign: 'center' as const,
   },
   title: {
-    fontSize: '24px',
-    fontWeight: 600,
-    color: '#e0e0e0',
-    marginBottom: '32px',
+    fontSize: '28px',
+    fontWeight: 700,
+    color: colors.textPrimary,
+    marginBottom: '8px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  subtitle: {
+    fontSize: '15px',
+    color: colors.textSecondary,
+    marginBottom: '40px',
   },
   roomCodeCard: {
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-    border: '2px solid #00ff88',
-    borderRadius: '12px',
-    padding: '32px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.accent}40`,
+    borderRadius: '16px',
+    padding: '28px',
     marginBottom: '32px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
   },
   roomCodeLabel: {
-    fontSize: '14px',
-    color: '#888',
-    marginBottom: '8px',
+    fontSize: '12px',
+    color: colors.textMuted,
+    marginBottom: '12px',
     textTransform: 'uppercase' as const,
     letterSpacing: '2px',
   },
   roomCode: {
-    fontSize: '18px',
+    fontSize: '15px',
     fontWeight: 600,
-    color: '#00ff88',
+    color: colors.accentLight,
     fontFamily: '"JetBrains Mono", monospace',
-    letterSpacing: '1px',
-    textShadow: '0 0 20px rgba(0, 255, 136, 0.5)',
+    letterSpacing: '0.5px',
     wordBreak: 'break-all' as const,
-    padding: '8px 0',
+    padding: '12px 16px',
+    background: colors.bgDark,
+    borderRadius: '8px',
+    border: `1px solid ${colors.border}`,
   },
   shareText: {
-    fontSize: '14px',
-    color: '#888',
+    fontSize: '13px',
+    color: colors.textMuted,
     marginTop: '16px',
   },
   playersSection: {
     marginBottom: '32px',
+    textAlign: 'left' as const,
   },
   sectionTitle: {
-    fontSize: '16px',
+    fontSize: '12px',
     fontWeight: 600,
-    color: '#ff6b6b',
+    color: colors.textMuted,
     marginBottom: '16px',
     textTransform: 'uppercase' as const,
-    letterSpacing: '1px',
+    letterSpacing: '1.5px',
   },
   playerCard: {
-    background: '#1a1a2e',
-    border: '1px solid #333',
-    borderRadius: '8px',
-    padding: '16px',
-    marginBottom: '8px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '12px',
+    padding: '16px 20px',
+    marginBottom: '10px',
     display: 'flex',
     alignItems: 'center',
-    gap: '12px',
+    gap: '14px',
   },
   playerAvatar: {
-    width: '40px',
-    height: '40px',
-    borderRadius: '50%',
-    background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%)',
+    width: '42px',
+    height: '42px',
+    borderRadius: '10px',
+    background: `${colors.accent}30`,
+    border: `1px solid ${colors.accent}40`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '18px',
+    fontSize: '20px',
   },
   playerName: {
-    fontSize: '16px',
-    fontWeight: 500,
-    color: '#e0e0e0',
+    fontSize: '15px',
+    fontWeight: 600,
+    color: colors.textPrimary,
+    fontFamily: '"JetBrains Mono", monospace',
   },
   waitingCard: {
-    background: '#1a1a2e',
-    border: '1px dashed #333',
-    borderRadius: '8px',
-    padding: '16px',
-    color: '#666',
+    background: colors.bgGradientStart,
+    border: `1px dashed ${colors.border}`,
+    borderRadius: '12px',
+    padding: '20px',
+    color: colors.textMuted,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: '8px',
+    gap: '12px',
+    fontSize: '14px',
   },
   spinner: {
-    width: '20px',
-    height: '20px',
-    border: '2px solid #333',
-    borderTopColor: '#ff6b6b',
+    width: '18px',
+    height: '18px',
+    border: `2px solid ${colors.border}`,
+    borderTopColor: colors.accent,
     borderRadius: '50%',
     animation: 'spin 1s linear infinite',
   },
   button: {
-    padding: '14px 32px',
-    fontSize: '16px',
+    padding: '14px 28px',
+    fontSize: '14px',
     fontWeight: 600,
     background: 'transparent',
-    border: '1px solid #ff6b6b',
-    borderRadius: '8px',
-    color: '#ff6b6b',
+    border: `1px solid ${colors.border}`,
+    borderRadius: '10px',
+    color: colors.textMuted,
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
     transition: 'all 0.2s ease',
@@ -123,8 +153,12 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
   players,
   onLeave,
 }) => {
+  const [copied, setCopied] = React.useState(false);
+
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -137,13 +171,20 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         `}
       </style>
 
-      <h1 style={styles.title}>🏠 Waiting for Opponent</h1>
+      <h1 style={styles.title}>Waiting Room</h1>
+      <p style={styles.subtitle}>Share the room ID to invite a friend</p>
 
-      <div style={styles.roomCodeCard} onClick={copyRoomCode}>
+      <div 
+        style={{
+          ...styles.roomCodeCard,
+          borderColor: copied ? colors.accent : `${colors.accent}40`,
+        }} 
+        onClick={copyRoomCode}
+      >
         <div style={styles.roomCodeLabel}>Room ID</div>
         <div style={styles.roomCode}>{roomId}</div>
         <div style={styles.shareText}>
-          📋 Click to copy • Share this ID with a friend!
+          {copied ? '✓ Copied to clipboard!' : 'Click to copy'}
         </div>
       </div>
 
@@ -153,7 +194,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         {players.map((player, index) => (
           <div key={player.id} style={styles.playerCard}>
             <div style={styles.playerAvatar}>
-              {index === 0 ? '🏎️' : '🚗'}
+              {index === 0 ? '👤' : '👤'}
             </div>
             <div style={styles.playerName}>{player.name}</div>
           </div>
@@ -162,7 +203,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         {players.length < 2 && (
           <div style={styles.waitingCard}>
             <div style={styles.spinner} />
-            Waiting for opponent...
+            Waiting for opponent to join...
           </div>
         )}
       </div>

@@ -33,52 +33,101 @@ function createLineNumbersExtension(relative: boolean) {
   });
 }
 
+// Color palette - cohesive cyberpunk/neon theme
+const colors = {
+  // Base
+  bgDark: '#0a0a0f',
+  bgCard: '#12121a',
+  bgGradientStart: '#0f172a',
+  bgGradientEnd: '#1e1b4b',
+  
+  // Primary accent (cyan/teal) - matches navigate highlight
+  primary: '#06b6d4',
+  primaryLight: '#22d3ee',
+  primaryGlow: 'rgba(6, 182, 212, 0.3)',
+  
+  // Secondary accent (magenta/pink) - matches delete highlight
+  secondary: '#ec4899',
+  secondaryLight: '#f472b6',
+  
+  // Success (emerald)
+  success: '#10b981',
+  successLight: '#34d399',
+  
+  // Warning/Timer (amber)
+  warning: '#fbbf24',
+  warningDark: '#f59e0b',
+  
+  // Text
+  textPrimary: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#64748b',
+  
+  // Borders
+  border: '#334155',
+  borderLight: '#475569',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: '100vh',
-    background: '#0a0a0f',
+    background: `linear-gradient(180deg, ${colors.bgDark} 0%, #0f0f1a 100%)`,
   },
   raceContainer: {
     padding: '24px',
+    maxWidth: '1400px',
+    margin: '0 auto',
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: '24px',
+    padding: '16px 24px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    borderRadius: '12px',
+    border: `1px solid ${colors.border}`,
   },
   title: {
     fontSize: '24px',
     fontWeight: 700,
-    color: '#e0e0e0',
+    color: colors.textPrimary,
     fontFamily: '"JetBrains Mono", monospace',
+    textShadow: `0 0 20px ${colors.primaryGlow}`,
   },
   timer: {
-    fontSize: '32px',
+    fontSize: '36px',
     fontWeight: 700,
-    color: '#ff6b6b',
+    color: colors.warning,
     fontFamily: '"JetBrains Mono", monospace',
+    textShadow: `0 0 20px ${colors.warning}40`,
+    letterSpacing: '2px',
   },
   taskBanner: {
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-    border: '1px solid #0f3460',
-    borderRadius: '8px',
-    padding: '16px 24px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.primary}40`,
+    borderRadius: '12px',
+    padding: '20px 28px',
     marginBottom: '24px',
+    boxShadow: `0 0 30px ${colors.primaryGlow}, inset 0 1px 0 rgba(255,255,255,0.05)`,
   },
   taskType: {
-    fontSize: '12px',
-    fontWeight: 600,
+    fontSize: '11px',
+    fontWeight: 700,
     textTransform: 'uppercase' as const,
-    letterSpacing: '1px',
-    color: '#ff6b6b',
-    marginBottom: '8px',
+    letterSpacing: '2px',
+    color: colors.primaryLight,
+    marginBottom: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
   },
   taskDescription: {
     fontSize: '18px',
     fontWeight: 500,
-    color: '#e0e0e0',
+    color: colors.textPrimary,
     fontFamily: '"JetBrains Mono", monospace',
+    lineHeight: 1.5,
   },
   editorsContainer: {
     display: 'flex',
@@ -90,67 +139,102 @@ const styles: Record<string, React.CSSProperties> = {
   editorLabel: {
     fontSize: '14px',
     fontWeight: 600,
-    color: '#888',
-    marginBottom: '8px',
+    color: colors.textSecondary,
+    marginBottom: '12px',
     display: 'flex',
     alignItems: 'center',
-    gap: '8px',
+    gap: '10px',
   },
   editorWrapper: {
-    borderRadius: '8px',
+    borderRadius: '12px',
     overflow: 'hidden',
-    border: '1px solid #333',
-    boxShadow: '0 4px 24px rgba(0, 0, 0, 0.5)',
+    border: `1px solid ${colors.border}`,
+    boxShadow: `0 8px 32px rgba(0, 0, 0, 0.4), 0 0 1px ${colors.primary}40`,
   },
   finishedBadge: {
-    background: '#00ff88',
-    color: '#1a1a2e',
-    padding: '2px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: 600,
+    background: `linear-gradient(135deg, ${colors.success} 0%, ${colors.successLight} 100%)`,
+    color: colors.bgDark,
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+    boxShadow: `0 0 12px ${colors.success}60`,
   },
   waitingContainer: {
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: '300px',
-    background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-    border: '1px solid #0f3460',
-    borderRadius: '8px',
-    padding: '32px',
+    minHeight: '350px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.success}40`,
+    borderRadius: '12px',
+    padding: '40px',
+    boxShadow: `0 0 40px ${colors.success}20`,
   },
   waitingTitle: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: 700,
-    color: '#00ff88',
+    color: colors.successLight,
     marginBottom: '16px',
     fontFamily: '"JetBrains Mono", monospace',
+    textShadow: `0 0 20px ${colors.success}60`,
   },
   waitingText: {
     fontSize: '16px',
-    color: '#888',
+    color: colors.textMuted,
     fontFamily: '"JetBrains Mono", monospace',
   },
   waitingTime: {
-    fontSize: '32px',
+    fontSize: '40px',
     fontWeight: 700,
-    color: '#00ff88',
-    marginTop: '16px',
+    color: colors.success,
+    marginTop: '20px',
     fontFamily: '"JetBrains Mono", monospace',
+    textShadow: `0 0 30px ${colors.success}80`,
+    letterSpacing: '2px',
   },
   opponentCursor: {
     position: 'relative' as const,
   },
   leaveButton: {
-    padding: '8px 16px',
+    padding: '10px 20px',
     fontSize: '14px',
     background: 'transparent',
-    border: '1px solid #ff6b6b',
-    borderRadius: '6px',
-    color: '#ff6b6b',
+    border: `1px solid ${colors.secondary}`,
+    borderRadius: '8px',
+    color: colors.secondary,
     cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
+  },
+  scoreboard: {
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '12px',
+    padding: '20px',
+    minWidth: '250px',
+  },
+  scoreboardTitle: {
+    fontSize: '14px',
+    fontWeight: 700,
+    color: colors.textPrimary,
+    marginBottom: '16px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '1px',
+    borderBottom: `1px solid ${colors.border}`,
+    paddingBottom: '12px',
+  },
+  scoreboardPlayer: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 0',
+    borderBottom: `1px solid ${colors.border}30`,
+    color: colors.textSecondary,
+    fontSize: '14px',
     fontFamily: '"JetBrains Mono", monospace',
   },
 };
@@ -243,6 +327,32 @@ const MultiplayerGame: React.FC = () => {
             '&': {
               fontSize: '14px',
               fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+            },
+            '.cm-content': {
+              caretColor: colors.primary,
+            },
+            '.cm-cursor, .cm-dropCursor': {
+              borderLeftColor: colors.primary,
+              borderLeftWidth: '2px',
+            },
+            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+              backgroundColor: `${colors.primary}30`,
+            },
+            '.cm-activeLine': {
+              backgroundColor: `${colors.primary}10`,
+            },
+            '.cm-activeLineGutter': {
+              backgroundColor: `${colors.primary}15`,
+            },
+            '.cm-gutters': {
+              backgroundColor: colors.bgCard,
+              borderRight: `1px solid ${colors.border}`,
+            },
+            '.cm-lineNumbers .cm-gutterElement': {
+              color: colors.textMuted,
+            },
+            '.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter': {
+              color: colors.primaryLight,
             },
           }),
         ],
@@ -415,7 +525,10 @@ const MultiplayerGame: React.FC = () => {
 
         {gameState.task.id && (
           <div style={styles.taskBanner}>
-            <div style={styles.taskType}>🎯 Navigate</div>
+            <div style={styles.taskType}>
+              {gameState.task.type === 'navigate' ? '🎯' : '✂️'}
+              {gameState.task.type === 'navigate' ? 'Navigate to target' : 'Delete the highlighted text'}
+            </div>
             <div style={styles.taskDescription}>{gameState.task.description}</div>
           </div>
         )}
@@ -444,20 +557,33 @@ const MultiplayerGame: React.FC = () => {
             )}
           </div>
  
-          {/* Show all players except me (opponents) and their task progress */}
-          <div style={{ color: '#e0e0e0' }}>
-            <strong>Scoreboard:</strong>
-            {gameState.players
-              .map(opponent => (
-                <div key={opponent.id}>
-                  {opponent.name}: Task {opponent.taskProgress ?? 0}/{gameState.rankings ? gameState.rankings.length : 10}
-                  {opponent.isFinished && (
+          {/* Scoreboard */}
+          <div style={styles.scoreboard}>
+            <div style={styles.scoreboardTitle}>🏁 Scoreboard</div>
+            {gameState.players.map(player => (
+              <div 
+                key={player.id} 
+                style={{
+                  ...styles.scoreboardPlayer,
+                  color: player.id === gameState.myPlayerId ? colors.primaryLight : colors.textSecondary,
+                }}
+              >
+                <span>
+                  {player.id === gameState.myPlayerId ? '👤 ' : ''}
+                  {player.name}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: colors.textMuted }}>
+                    {player.taskProgress ?? 0}/{gameState.rankings ? gameState.rankings.length : 10}
+                  </span>
+                  {player.isFinished && (
                     <span style={styles.finishedBadge}>
-                      ✓ {formatTime(opponent.finishTime || 0)}
+                      ✓ {formatTime(player.finishTime || 0)}
                     </span>
                   )}
-                </div>
-              ))}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -60,38 +60,17 @@ export const targetHighlightField = StateField.define<DecorationSet>({
 });
 
 // Theme for target highlights
+// Using cyan for navigate and magenta for delete - these contrast well with oneDark syntax colors
 export const targetHighlightTheme = EditorView.baseTheme({
-  // Navigate highlight (coral/red)
+  // Navigate highlight (cyan/teal - semi-transparent to keep text readable)
   '.cm-target-highlight': {
-    backgroundColor: '#ff6b6b',
-    color: '#1a1a2e',
-    borderRadius: '2px',
-    boxShadow: '0 0 8px #ff6b6b, 0 0 16px #ff6b6b55',
-    animation: 'pulse-navigate 1.5s ease-in-out infinite',
+    backgroundColor: 'rgba(6, 182, 212, 0.35)',
+    outline: '2px solid #06b6d4',
   },
-  // Delete highlight (orange/amber)
+  // Delete highlight (magenta/pink - semi-transparent to keep text readable)
   '.cm-delete-highlight': {
-    backgroundColor: '#f59e0b',
-    color: '#1a1a2e',
-    borderRadius: '2px',
-    boxShadow: '0 0 8px #f59e0b, 0 0 16px #f59e0b55',
-    animation: 'pulse-delete 1.5s ease-in-out infinite',
-  },
-  '@keyframes pulse-navigate': {
-    '0%, 100%': {
-      boxShadow: '0 0 8px #ff6b6b, 0 0 16px #ff6b6b55',
-    },
-    '50%': {
-      boxShadow: '0 0 12px #ff6b6b, 0 0 24px #ff6b6b88',
-    },
-  },
-  '@keyframes pulse-delete': {
-    '0%, 100%': {
-      boxShadow: '0 0 8px #f59e0b, 0 0 16px #f59e0b55',
-    },
-    '50%': {
-      boxShadow: '0 0 12px #f59e0b, 0 0 24px #f59e0b88',
-    },
+    backgroundColor: 'rgba(236, 72, 153, 0.35)',
+    outline: '2px solid #ec4899',
   },
 });
 

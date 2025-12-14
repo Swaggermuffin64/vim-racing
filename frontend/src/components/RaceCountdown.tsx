@@ -4,6 +4,12 @@ interface RaceCountdownProps {
   seconds: number;
 }
 
+const colors = {
+  accent: '#a78bfa',
+  accentLight: '#c4b5fd',
+  textPrimary: '#f1f5f9',
+};
+
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
     position: 'fixed' as const,
@@ -11,23 +17,34 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'rgba(10, 10, 15, 0.9)',
+    background: 'rgba(10, 10, 15, 0.92)',
     display: 'flex',
+    flexDirection: 'column' as const,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
+    backdropFilter: 'blur(4px)',
   },
   countdown: {
-    fontSize: '200px',
+    fontSize: '180px',
     fontWeight: 900,
     fontFamily: '"JetBrains Mono", monospace',
-    color: '#ff6b6b',
-    textShadow: '0 0 60px rgba(255, 107, 107, 0.8), 0 0 120px rgba(255, 107, 107, 0.4)',
-    animation: 'pulse 1s ease-in-out',
+    color: colors.textPrimary,
+    textShadow: `0 0 60px ${colors.accent}80, 0 0 120px ${colors.accent}40`,
+    animation: 'countdownPulse 1s ease-in-out',
   },
   go: {
-    color: '#00ff88',
-    textShadow: '0 0 60px rgba(0, 255, 136, 0.8), 0 0 120px rgba(0, 255, 136, 0.4)',
+    color: colors.accentLight,
+    textShadow: `0 0 60px ${colors.accent}, 0 0 120px ${colors.accent}80`,
+  },
+  label: {
+    fontSize: '18px',
+    fontWeight: 500,
+    fontFamily: '"JetBrains Mono", monospace',
+    color: colors.accent,
+    marginTop: '24px',
+    letterSpacing: '4px',
+    textTransform: 'uppercase' as const,
   },
 };
 
@@ -36,9 +53,9 @@ export const RaceCountdown: React.FC<RaceCountdownProps> = ({ seconds }) => {
     <div style={styles.overlay}>
       <style>
         {`
-          @keyframes pulse {
+          @keyframes countdownPulse {
             0% { transform: scale(0.5); opacity: 0; }
-            50% { transform: scale(1.1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 1; }
             100% { transform: scale(1); opacity: 1; }
           }
         `}
@@ -52,6 +69,9 @@ export const RaceCountdown: React.FC<RaceCountdownProps> = ({ seconds }) => {
       >
         {seconds === 0 ? 'GO!' : seconds}
       </div>
+      {seconds > 0 && (
+        <div style={styles.label}>Get Ready</div>
+      )}
     </div>
   );
 };
