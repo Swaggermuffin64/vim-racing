@@ -4,6 +4,8 @@ import type { Player } from '../types/multiplayer';
 interface WaitingRoomProps {
   roomId: string;
   players: Player[];
+  myPlayerId: string | null;
+  onReady: () => void;
   onLeave: () => void;
 }
 
@@ -113,6 +115,16 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: colors.textPrimary,
     fontFamily: '"JetBrains Mono", monospace',
+    flex: 1,
+  },
+  readyBadge: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: '#10b981',
+    background: 'rgba(16, 185, 129, 0.15)',
+    padding: '4px 10px',
+    borderRadius: '6px',
+    border: '1px solid rgba(16, 185, 129, 0.3)',
   },
   waitingCard: {
     background: colors.bgGradientStart,
@@ -146,14 +158,47 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '"JetBrains Mono", monospace',
     transition: 'all 0.2s ease',
   },
+  readyButton: {
+    padding: '14px 28px',
+    fontSize: '14px',
+    fontWeight: 600,
+    background: colors.accent,
+    border: 'none',
+    borderRadius: '10px',
+    color: colors.bgDark,
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    transition: 'all 0.2s ease',
+  },
+  readyButtonDisabled: {
+    padding: '14px 28px',
+    fontSize: '14px',
+    fontWeight: 600,
+    background: colors.accent,
+    border: 'none',
+    borderRadius: '10px',
+    color: colors.bgDark,
+    cursor: 'not-allowed',
+    fontFamily: '"JetBrains Mono", monospace',
+    opacity: 0.6,
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '12px',
+    justifyContent: 'center',
+  },
 };
 
 export const WaitingRoom: React.FC<WaitingRoomProps> = ({
   roomId,
   players,
+  myPlayerId,
+  onReady,
   onLeave,
 }) => {
   const [copied, setCopied] = React.useState(false);
+  const me = players.find(p => p.id === myPlayerId);
+  const isReady = me?.readyToPlay ?? false;
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId);
@@ -191,12 +236,18 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
       <div style={styles.playersSection}>
         <div style={styles.sectionTitle}>Players ({players.length}/2)</div>
         
-        {players.map((player, index) => (
+        {players.map((player) => (
           <div key={player.id} style={styles.playerCard}>
             <div style={styles.playerAvatar}>
-              {index === 0 ? '👤' : '👤'}
+              {player.id === myPlayerId ? '👤' : '🎮'}
             </div>
-            <div style={styles.playerName}>{player.name}</div>
+            <div style={styles.playerName}>
+              {player.name}
+              {player.id === myPlayerId && ' (You)'}
+            </div>
+            {player.readyToPlay && (
+              <div style={styles.readyBadge}>✓ Ready</div>
+            )}
           </div>
         ))}
 
@@ -208,9 +259,20 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         )}
       </div>
 
-      <button style={styles.button} onClick={onLeave}>
-        Leave Room
-      </button>
+      <div style={styles.buttonGroup}>
+        <button style={styles.button} onClick={onLeave}>
+          Leave Room
+        </button>
+        {players.length === 2 && (
+          <button
+            style={isReady ? styles.readyButtonDisabled : styles.readyButton}
+            onClick={onReady}
+            disabled={isReady}
+          >
+            {isReady ? '✓ Ready!' : 'Ready'}
+          </button>
+        )}
+      </div>
     </div>
   );
 };

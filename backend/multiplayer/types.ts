@@ -7,6 +7,7 @@ export interface Player {
   taskProgress: number;
   isFinished: boolean;
   successIndicator: { cursorOffset?: number; editorText?: string };
+  readyToPlay: boolean;
   finishTime?: number;
 }
 
@@ -14,6 +15,7 @@ export interface GameRoom {
   id: string;
   players: Map<string, Player>;
   tasks: Task[];
+  num_tasks: number;
   state: 'waiting' | 'countdown' | 'racing' | 'finished';
   startTime?: number;
   countdownStart?: number;
@@ -21,10 +23,10 @@ export interface GameRoom {
 
 // Client → Server Events
 export interface ClientToServerEvents {
-
-  'room:create': (data: { playerName: string; roomId?: string }) => void;
+  'room:create': (data: { playerName: string; roomId?: string}) => void;
   'room:join': (data: { roomId: string; playerName: string }) => void;
   'room:leave': () => void;
+  'player:ready_to_play': () => void;
   'player:cursor': (data: { offset: number }) => void;
   'player:editorText': (data: { text: string }) => void;
 }
@@ -35,9 +37,11 @@ export interface ServerToClientEvents {
   'room:joined': (data: { roomId: string; players: Player[]; }) => void;
   'room:player_joined': (data: { player: Player }) => void;
   'room:player_left': (data: { playerId: string }) => void;
+  'room:player_ready': (data: { playerId: string }) => void;
+  'room:reset': (data: { players: Player[] }) => void;
   'room:error': (data: { message: string }) => void;
   'game:countdown': (data: { seconds: number }) => void;
-  'game:start': (data: { startTime: number, initialTask: Task | undefined}) => void;
+  'game:start': (data: { startTime: number, initialTask: Task | undefined, num_tasks: number}) => void;
   'game:opponent_finished_task': (data: { playerId: string; taskProgress: number;}) => void;
   'game:player_finished_task': (data: { playerId: string; taskProgress: number; newTask: Task | undefined}) => void;
   'game:validation_failed': (playerId: string) => void;

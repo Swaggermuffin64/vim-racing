@@ -108,7 +108,6 @@ io.on('connection', (socket) => {
   socket.on('room:create', ({ playerName, roomId: externalRoomId }) => {
     const room = roomManager.createRoom(socket, playerName, externalRoomId);
     const player = room.players.get(socket.id)!;
-    
     socket.emit('room:created', { 
       roomId: room.id, 
       player,
@@ -130,6 +129,11 @@ io.on('connection', (socket) => {
   // Leave room
   socket.on('room:leave', () => {
     roomManager.leaveRoom(socket);
+  });
+
+  // Play again (reset room for new game)
+  socket.on('player:ready_to_play', () => {
+    roomManager.playerReadyToPlay(socket);
   });
 
   // Handle cursor movement during race

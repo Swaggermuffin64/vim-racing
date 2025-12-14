@@ -248,6 +248,7 @@ const MultiplayerGame: React.FC = () => {
     createRoom,
     joinRoom,
     leaveRoom,
+    readyToPlay,
     sendCursorMove,
     sendEditorText,
     clearResetFlag,
@@ -495,6 +496,8 @@ const MultiplayerGame: React.FC = () => {
         <WaitingRoom
           roomId={gameState.roomId!}
           players={gameState.players}
+          myPlayerId={gameState.myPlayerId}
+          onReady={readyToPlay}
           onLeave={leaveRoom}
         />
       </div>
@@ -512,7 +515,7 @@ const MultiplayerGame: React.FC = () => {
         <RaceResults
           rankings={gameState.rankings}
           myPlayerId={gameState.myPlayerId}
-          onPlayAgain={leaveRoom} // For now, just leave and rejoin
+          onPlayAgain={readyToPlay}
           onLeave={leaveRoom}
         />
       )}
@@ -577,7 +580,7 @@ const MultiplayerGame: React.FC = () => {
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: colors.textMuted }}>
-                    {player.taskProgress ?? 0}/{gameState.rankings ? gameState.rankings.length : 10}
+                    {player.taskProgress ?? 0}/{gameState.num_tasks ? gameState.num_tasks : 1}
                   </span>
                   {player.isFinished && (
                     <span style={styles.finishedBadge}>

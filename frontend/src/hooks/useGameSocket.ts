@@ -55,21 +55,22 @@ interface UseGameSocketReturn {
   createRoom: (playerName: string) => void;
   joinRoom: (roomId: string, playerName: string) => void;
   leaveRoom: () => void;
+  readyToPlay: () => void;
   sendCursorMove: (offset: number) => void;
   sendEditorText: (text: string) => void;
   sendTaskComplete: () => void;
   clearResetFlag: () => void;
 }
 
-const initialGameState: GameState = {
+const initialGameState: Omit<GameState, 'myPlayerId'> = {
   roomId: null,
   roomState: 'idle',
   players: [],
   task: EMPTY_TASK,
+  num_tasks: 0,
   countdown: null,
   startTime: null,
   rankings: null,
-  myPlayerId: null,
   shouldResetEditor: false,
 };
 
@@ -78,7 +79,7 @@ export function useGameSocket(): UseGameSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [gameState, setGameState] = useState<GameState>(initialGameState);
+  const [gameState, setGameState] = useState<GameState>({ ...initialGameState, myPlayerId: null });
 
   // Setup socket event listeners
   const setupSocketListeners = useCallback((socket: Socket) => {
@@ -134,6 +135,30 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
+    socket.on('room:player_ready', ({ playerId }) => {
+      console.log('👤 Player ready:', playerId);
+      setGameState(prev => ({
+        ...prev,
+        players: prev.players.map(p =>
+          p.id === playerId ? { ...p, readyToPlay: true } : p
+        ),
+      }));
+    });
+
+    socket.on('room:reset', ({ players }) => {
+      console.log('🔄 Room reset for new game');
+      setGameState(prev => ({
+        ...prev,
+        roomState: 'waiting',
+        players,
+        task: EMPTY_TASK,
+        countdown: null,
+        startTime: null,
+        rankings: null,
+        shouldResetEditor: false,
+      }));
+    });
+
     socket.on('room:error', ({ message }) => {
       console.error('❌ Room error:', message);
       setError(message);
@@ -145,12 +170,13 @@ export function useGameSocket(): UseGameSocketReturn {
       console.log('⏱️ Countdown:', seconds);
       setGameState(prev => ({
         ...prev,
+        readyToPlay: false,
         roomState: 'countdown',
         countdown: seconds,
       }));
     });
 
-    socket.on('game:start', ({ startTime, initialTask }) => {
+    socket.on('game:start', ({ startTime, initialTask, num_tasks }) => {
       console.log('🏁 Race started!', initialTask);
       setGameState(prev => ({
         ...prev,
@@ -158,6 +184,8 @@ export function useGameSocket(): UseGameSocketReturn {
         countdown: null,
         startTime,
         task: initialTask,
+        num_tasks,
+        players: prev.players.map(p => ({ ...p, readyToPlay: false })),
       }));
     });
 
@@ -311,7 +339,7 @@ export function useGameSocket(): UseGameSocketReturn {
         await connectSocket(connectionUrl);
 
         // Create room with Hathora roomId so backend uses the same ID
-        socketRef.current?.emit('room:create', { playerName, roomId });
+        socketRef.current?.emit('room:create', { playerName, roomId,});
       } catch (err: any) {
         console.error('❌ Failed to create Hathora lobby:', err);
         console.error('❌ Error details:', {
@@ -366,7 +394,14 @@ export function useGameSocket(): UseGameSocketReturn {
   const leaveRoom = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.emit('room:leave');
-      setGameState(initialGameState);
+      setGameState(prev => ({ ...initialGameState, myPlayerId: prev.myPlayerId }));
+    }
+  }, []);
+
+  const readyToPlay = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.emit('player:ready_to_play');
+      setGameState(prev => ({ ...prev, roomState: 'waiting',  }));
     }
   }, []);
 
@@ -378,7 +413,6 @@ export function useGameSocket(): UseGameSocketReturn {
 
   const sendEditorText = useCallback((text: string) => {
     if (socketRef.current && gameState.task.type === 'delete' && gameState.roomState === 'racing') {
-      console.log("firing");
       socketRef.current.emit('player:editorText', { text });
     }
   }, [gameState.roomState, gameState.task.type]);
@@ -401,6 +435,7 @@ export function useGameSocket(): UseGameSocketReturn {
     createRoom,
     joinRoom,
     leaveRoom,
+    readyToPlay,
     sendCursorMove,
     sendEditorText,
     sendTaskComplete,

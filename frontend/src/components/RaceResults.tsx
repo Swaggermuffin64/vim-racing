@@ -165,12 +165,8 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
               key={ranking.playerId}
               style={{
                 ...styles.rankingItem,
-                background: ranking.playerId === myPlayerId
-                  ? `${colors.accent}15`
-                  : colors.bgDark,
-                border: ranking.playerId === myPlayerId
-                  ? `1px solid ${colors.accent}40`
-                  : `1px solid transparent`,
+                background: `${colors.accent}15`,
+                border: `1px solid ${colors.accent}40`,
               }}
             >
               <div

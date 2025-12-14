@@ -54,6 +54,7 @@ export class RoomManager {
       successIndicator: { cursorOffset: 0, editorText: ''},
       taskProgress: 0, // 0 to NUM_TASKS - 1
       isFinished: false,
+      readyToPlay: false
     };
 
     const positionTasks: Task[] = generatePositionTasks(this.NUM_TASKS);
@@ -64,6 +65,7 @@ export class RoomManager {
       id: roomId,
       players: new Map([[playerId, player]]),
       tasks: allTasks,
+      num_tasks: this.NUM_TASKS,
       state: 'waiting',
     };
     this.rooms.set(roomId, room);
@@ -107,6 +109,7 @@ export class RoomManager {
       successIndicator: {cursorOffset: 0, editorText: ''},
       taskProgress: 0,
       isFinished: false,
+      readyToPlay:false
     };
 
     room.players.set(playerId, player);
@@ -122,12 +125,6 @@ export class RoomManager {
 
     // Notify other players (not the player who joined)
     socket.to(roomId).emit('room:player_joined', { player });
-
-    // If we have 2 players, start countdown
-    if (room.players.size === 2) {
-      this.startCountdown(roomId);
-    }
-
     return room;
   }
 
@@ -159,6 +156,30 @@ export class RoomManager {
       room.state = 'finished';
       this.endRace(roomId);
     }
+  }
+
+  playerReadyToPlay(socket: GameSocket): void {
+    const roomId = socket.data.roomId;
+    const playerId = socket.data.playerId;
+    if (!roomId || !playerId) return;
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    const player = room.players.get(playerId);
+    if (!player) return;
+    player.readyToPlay = true;
+    this.io.to(roomId).emit('room:player_ready', { playerId });
+    console.log("all players", room.players);
+    // Check to see if all players are ready
+    const allReady = Array.from(room.players.values()).every(p => p.readyToPlay);
+    if (!allReady) {
+      console.log("Waiting for other players to be ready...");
+      return;
+    }
+    
+    // All players are ready - reset room, then start countdown
+    console.log("Play again consensus! Resetting room, then starting countdown.");
+    this.resetRoom(socket);
+    this.startCountdown(roomId);
   }
 
   private startCountdown(roomId: string): void {
@@ -197,10 +218,11 @@ export class RoomManager {
       player.isFinished = false;
       player.taskProgress = 0;
       player.finishTime = 0;
+      player.readyToPlay = false;
     });
 
     console.log(`🏁 Race started in room ${roomId}`);
-    this.io.to(roomId).emit('game:start', { startTime: room.startTime, initialTask: room.tasks[0]});
+    this.io.to(roomId).emit('game:start', { startTime: room.startTime, initialTask: room.tasks[0], num_tasks: room.num_tasks});
   }
 
   handleCursorMove(socket: GameSocket, offset: number): void {
@@ -302,11 +324,13 @@ export class RoomManager {
       taskProgress: player.taskProgress,
     });
     
-    // Check if the player has now finished all tasks
-    if (player.taskProgress !== this.NUM_TASKS) {
+    // Return early if player not finished all tasks
+    console.log("player task progress", player.taskProgress);
+    console.log("room num tasks", room.num_tasks);
+    if (player.taskProgress < room.num_tasks) {
       return;
     }
-    
+   // Player finished all tasks 
     player.isFinished = true;
     player.finishTime = Date.now() - (room.startTime || 0);
 
@@ -380,6 +404,48 @@ export class RoomManager {
     console.log(`🏆 Race complete in room ${roomId}:`, rankings);
 
     this.io.to(roomId).emit('game:complete', { rankings });
+  }
+
+  resetRoom(socket: GameSocket): void {
+    const roomId = socket.data.roomId;
+    const playerId = socket.data.playerId;
+    
+    if (!roomId || !playerId) return;
+    
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    
+    // Only allow reset when game is finished
+    if (room.state !== 'finished') {
+      socket.emit('room:error', { message: 'Cannot reset: game not finished' });
+      return;
+    }
+
+    // Generate new tasks
+    const positionTasks = generatePositionTasks(this.NUM_TASKS);
+    const deleteTasks = generateDeleteTasks(this.NUM_TASKS);
+    room.tasks = shuffle([...positionTasks, ...deleteTasks]);
+
+    // Reset all player states
+    room.players.forEach(player => {
+      player.successIndicator = { cursorOffset: 0, editorText: '' };
+      player.taskProgress = 0;
+      player.isFinished = false;
+      player.readyToPlay = false;
+      delete player.finishTime;
+    });
+
+    // Reset room state
+    room.state = 'waiting';
+    delete room.startTime;
+    delete room.countdownStart;
+
+    console.log(`🔄 Room ${roomId} reset for new game`);
+
+    // Notify all players that room has been reset
+    this.io.to(roomId).emit('room:reset', { 
+      players: this.getPlayersArray(room) 
+    });
   }
 
   getRoom(roomId: string): GameRoom | undefined {

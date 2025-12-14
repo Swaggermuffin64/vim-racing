@@ -17,6 +17,7 @@ export interface Player {
   cursorOffset: number;
   taskProgress: number;
   isFinished: boolean;
+  readyToPlay: boolean;
   finishTime?: number;
 }
 
@@ -43,6 +44,7 @@ export interface GameState {
   roomState: RoomState;
   players: Player[];
   task: Task;
+  num_tasks: number;
   countdown: number | null;
   startTime: number | null;
   rankings: Ranking[] | null;
