@@ -109,6 +109,7 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
 
     if (isValidDeletion) {
       console.log('✅ [DeleteFilter] Allowed deletion');
+      console.log(allowedRange);
       return tr; // Allow deletion within range
     } else {
       console.log('❌ [DeleteFilter] Blocked:', blockReason);

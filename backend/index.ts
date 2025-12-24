@@ -143,7 +143,6 @@ io.on('connection', (socket) => {
 
   // Handle editor text for delete task validation
   socket.on('player:editorText', ({ text }) => {
-    console.log("TEXT RECIEVED" , text);
     roomManager.handleEditorText(socket, text);
   });
 

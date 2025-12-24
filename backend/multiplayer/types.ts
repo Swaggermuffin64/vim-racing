@@ -1,5 +1,5 @@
 // Shared multiplayer types
-import type { Task } from "../types.js";
+import type { PositionTask, Task } from "../types.js";
 
 export interface Player {
   id: string;

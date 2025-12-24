@@ -1,5 +1,5 @@
-import type { PositionTask, DeleteTask, Position, Task} from './types.js';
-
+import type { PositionTask, DeleteTask, Position, Task, IntTuple, DeleteStrategy } from './types.ts';
+import { CODE_SNIPPIT_OBJECTS  } from './codeSnippets.js'; //will be a db call one day
 /**
  * Remove empty lines from a code snippet
  */
@@ -10,65 +10,6 @@ function removeEmptyLines(code: string): string {
     .join('\n');
 }
 
-// Code snippets for vim racing
-const CODE_SNIPPETS: string[] = [
-  `int factorial(int n) {
-    if (n <= 1) {
-        return 1;
-    }
-    return n * factorial(n - 1);
-}`,
-
-  `void swap(int *a, int *b) {
-    int temp = *a;
-    *a = *b;
-    *b = temp;
-}`,
-
-  `int binary_search(int arr[], int size, int target) {
-    int left = 0;
-    int right = size - 1;
-
-    while (left <= right) {
-        int mid = left + (right - left) / 2;
-        if (arr[mid] == target) {
-            return mid;
-        }
-        if (arr[mid] < target) {
-            left = mid + 1;
-        } else {
-            right = mid - 1;
-        }
-    }
-    return -1;
-}`,
-
-  `void bubble_sort(int arr[], int n) {
-    for (int i = 0; i < n - 1; i++) {
-        for (int j = 0; j < n - i - 1; j++) {
-            if (arr[j] > arr[j + 1]) {
-                int temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
-            }
-        }
-    }
-}`,
-
-  `struct Node *reverse_list(struct Node *head) {
-    struct Node *prev = NULL;
-    struct Node *current = head;
-    struct Node *next = NULL;
-
-    while (current != NULL) {
-        next = current->next;
-        current->next = prev;
-        prev = current;
-        current = next;
-    }
-    return prev;
-}`,
-];
 
 /**
  * Convert line/col position to character offset
@@ -96,9 +37,9 @@ function getCharAtPosition(code: string, pos: Position): string {
   if (!line || pos.col < 0 || pos.col >= line.length) return '';
   return line[pos.col] ?? '';
 }
-
 /**
  * Find interesting positions in code (not whitespace, meaningful characters)
+ * Returns Position: row, col - used for navigation tasks
  */
 function findInterestingPositions(code: string): Position[] {
   const lines = code.split('\n');
@@ -107,7 +48,6 @@ function findInterestingPositions(code: string): Position[] {
   lines.forEach((line, lineIndex) => {
     for (let col = 0; col < line.length; col++) {
       const char = line[col];
-      // Skip leading whitespace, prefer meaningful characters
       if (char !== ' ' && char !== '\t') {
         positions.push({ line: lineIndex + 1, col });
       }
@@ -117,32 +57,35 @@ function findInterestingPositions(code: string): Position[] {
   return positions;
 }
 
-function findDeleteRange(code: string): { from: number; to: number } {
-  const interestingPositions = findInterestingPositions(code);
-  const index1 = Math.floor(Math.random() * interestingPositions.length);
-  let index2 = Math.floor(Math.random() * interestingPositions.length);
-
-  // Make sure they're different
-  while (index1 === index2) {
-    index2 = Math.floor(Math.random() * interestingPositions.length);
+/**
+ * Find indices of non-whitespace characters - returns flat offsets for delete tasks
+ */
+function findNonWhitespaceIndices(code: string): number[] {
+  const indices: number[] = [];
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i];
+    if (char !== ' ' && char !== '\t' && char !== '\n') {
+      indices.push(i);
+    }
   }
-
-  // Convert Position objects to character offsets
-  const pos1 = interestingPositions[index1];
-  const pos2 = interestingPositions[index2];
-  
-  if (!pos1 || !pos2) {
-    return { from: 0, to: 1 };
-  }
-
-  const offset1 = positionToOffset(code, pos1);
-  const offset2 = positionToOffset(code, pos2);
-
-  return {
-    from: Math.min(offset1, offset2),
-    to: Math.max(offset1, offset2)
-  };
+  return indices;
 }
+
+function findRandomDeleteRange(code: string): IntTuple {
+  const indices = findNonWhitespaceIndices(code);
+  if (indices.length < 2) return [0, 1];
+
+  const idx1 = Math.floor(Math.random() * indices.length);
+  let idx2 = Math.floor(Math.random() * indices.length);
+  while (idx1 === idx2) {
+    idx2 = Math.floor(Math.random() * indices.length);
+  }
+
+  const offset1 = indices[idx1]!;
+  const offset2 = indices[idx2]!;
+  return [Math.min(offset1, offset2), Math.max(offset1, offset2)];
+}
+
 
 
 /**
@@ -165,14 +108,16 @@ let taskIdCounter = 0;
  * Generate a random position task
  */
 export function generatePositionTask(): PositionTask {
-  const snippetIndex = Math.floor(Math.random() * CODE_SNIPPETS.length);
-  const snippet = removeEmptyLines(CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!);
+  const snippetIndex = Math.floor(Math.random() * CODE_SNIPPIT_OBJECTS.length);
+  const snippet = removeEmptyLines(CODE_SNIPPIT_OBJECTS[snippetIndex]?.code ?? CODE_SNIPPIT_OBJECTS[0]?.code!);
   const positions = findInterestingPositions(snippet);
   
   // Pick a random interesting position
   const posIndex = Math.floor(Math.random() * positions.length);
   const targetPosition = positions[posIndex] ?? { line: 1, col: 0 };
   const targetOffset = positionToOffset(snippet, targetPosition);
+  
+  console.log(`[NAVIGATE] Target: line ${targetPosition.line}, col ${targetPosition.col}`);
   
   return {
     id: `task-${++taskIdCounter}`,
@@ -184,12 +129,130 @@ export function generatePositionTask(): PositionTask {
   };
 }
 
+/**
+ * Filter indices to only include pairs with non-empty inner content
+ */
+function getValidInnerIndices(code: string, indices: IntTuple[]): IntTuple[] {
+  return indices.filter(([start, end]) => {
+    const innerStart = start + 1;
+    const innerEnd = end - 1;
+    if (innerStart >= innerEnd) return false;
+    const innerContent = code.slice(innerStart, innerEnd);
+    return innerContent.trim().length > 0;
+  });
+}
+
+type DeleteStrategyExecutor = () => IntTuple;
+
 export function generateDeleteTask(): DeleteTask {
-  const snippetIndex = Math.floor(Math.random() * CODE_SNIPPETS.length);
-  const snippet = removeEmptyLines(CODE_SNIPPETS[snippetIndex] ?? CODE_SNIPPETS[0]!);
-  const { from, to } = findDeleteRange(snippet);
-  // 'from' and 'to' are offsets that specify the region to delete
-  // Make sure from <= to
+  const snippetIndex = Math.floor(Math.random() * CODE_SNIPPIT_OBJECTS.length);
+  const snippet = removeEmptyLines(CODE_SNIPPIT_OBJECTS[snippetIndex]?.code!); 
+  const snippetData = CODE_SNIPPIT_OBJECTS[snippetIndex];
+
+  // Build available strategies based on what the snippet contains
+  const strategies: Array<{ name: DeleteStrategy; execute: DeleteStrategyExecutor }> = [];
+
+  // Word strategy (1-3 consecutive words) - always available (snippets always have words)
+  if ((snippetData?.wordIndices.length ?? 0) > 0) {
+    strategies.push({
+      name: 'WORD',
+      execute: () => {
+        const words = snippetData!.wordIndices;
+        const wordCount = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3 words
+        const maxStartIdx = Math.max(0, words.length - wordCount);
+        const startIdx = Math.floor(Math.random() * (maxStartIdx + 1));
+        const endIdx = Math.min(startIdx + wordCount - 1, words.length - 1);
+        
+        const firstWord = words[startIdx] ?? [0, 1];
+        const lastWord = words[endIdx] ?? firstWord;
+        return [firstWord[0], lastWord[1]];
+      }
+    });
+  }
+
+  // Curly brace (da{) - only if snippet has curly braces
+  if ((snippetData?.curlyBraceIndices.length ?? 0) > 0) {
+    strategies.push({
+      name: 'CURLY_BRACE',
+      execute: () => {
+        const idx = Math.floor(Math.random() * snippetData!.curlyBraceIndices.length);
+        return snippetData!.curlyBraceIndices[idx] ?? [0, 1];
+      }
+    });
+  }
+
+  // Parenthesis (da() - only if snippet has parentheses
+  if ((snippetData?.parenthesisIndices.length ?? 0) > 0) {
+    strategies.push({
+      name: 'PARENTHESIS',
+      execute: () => {
+        const idx = Math.floor(Math.random() * snippetData!.parenthesisIndices.length);
+        return snippetData!.parenthesisIndices[idx] ?? [0, 1];
+      }
+    });
+  }
+
+  // Inner curly brace (di{) - only if snippet has non-empty brace pairs
+  const validInnerBraces = getValidInnerIndices(snippet, snippetData?.curlyBraceIndices ?? []);
+  if (validInnerBraces.length > 0) {
+    strategies.push({
+      name: 'INNER_CURLY_BRACE',
+      execute: () => {
+        const idx = Math.floor(Math.random() * validInnerBraces.length);
+        const [start, end] = validInnerBraces[idx] ?? [0, 2];
+        return [start + 1, end - 1];
+      }
+    });
+  }
+
+  // Inner parenthesis (di() - only if snippet has non-empty paren pairs
+  const validInnerParens = getValidInnerIndices(snippet, snippetData?.parenthesisIndices ?? []);
+  if (validInnerParens.length > 0) {
+    strategies.push({
+      name: 'INNER_PARENTHESIS',
+      execute: () => {
+        const idx = Math.floor(Math.random() * validInnerParens.length);
+        const [start, end] = validInnerParens[idx] ?? [0, 2];
+        return [start + 1, end - 1];
+      }
+    });
+  }
+
+  // Bracket (da[) - only if snippet has brackets
+  if ((snippetData?.bracketIndices.length ?? 0) > 0) {
+    strategies.push({
+      name: 'BRACKET',
+      execute: () => {
+        const idx = Math.floor(Math.random() * snippetData!.bracketIndices.length);
+        return snippetData!.bracketIndices[idx] ?? [0, 1];
+      }
+    });
+  }
+
+  // Inner bracket (di[) - only if snippet has non-empty bracket pairs
+  const validInnerBrackets = getValidInnerIndices(snippet, snippetData?.bracketIndices ?? []);
+  if (validInnerBrackets.length > 0) {
+    strategies.push({
+      name: 'INNER_BRACKET',
+      execute: () => {
+        const idx = Math.floor(Math.random() * validInnerBrackets.length);
+        const [start, end] = validInnerBrackets[idx] ?? [0, 2];
+        return [start + 1, end - 1];
+      }
+    });
+  }
+
+  // Random fallback - always available
+  strategies.push({
+    name: 'RANDOM',
+    execute: () => findRandomDeleteRange(snippet)
+  });
+
+  // Pick a random strategy
+  const chosen = strategies[Math.floor(Math.random() * strategies.length)]!;
+  console.log(`[DELETE] Strategy: ${chosen.name}`);
+  const [from, to] = chosen.execute();
+
   const expectedResult = snippet.slice(0, from) + snippet.slice(to);
   return {
     id: `task-${++taskIdCounter}`,
@@ -198,6 +261,7 @@ export function generateDeleteTask(): DeleteTask {
     codeSnippet: snippet,
     targetRange: {from, to},
     expectedResult,
+    strategy: chosen.name,
   }
 }
 
@@ -206,7 +270,13 @@ export function generatePositionTasks(count: number): Task[] {
 }
 
 export function generateDeleteTasks(count: number): Task[] {
-  return Array.from({ length: count }, generateDeleteTask);
+  CODE_SNIPPIT_OBJECTS.forEach((snippet, i) => {
+    console.log(`\n=== Snippet ${i} ===`);
+    console.log('Curly braces:', JSON.stringify(snippet.curlyBraceIndices));
+    console.log('Parentheses:', JSON.stringify(snippet.parenthesisIndices));
+  });
+  const deleteTasks = Array.from({ length: count }, generateDeleteTask);
+  return deleteTasks; 
 }
 
 /**

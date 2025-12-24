@@ -2,6 +2,17 @@
 
 export type TaskType = 'navigate' | 'delete' | 'insert' | 'change';
 
+// Delete strategies - maps to vim commands
+export type DeleteStrategy = 
+  | 'WORD'              // dw, d2w, d3w
+  | 'CURLY_BRACE'       // da{
+  | 'INNER_CURLY_BRACE' // di{
+  | 'PARENTHESIS'       // da(
+  | 'INNER_PARENTHESIS' // di(
+  | 'BRACKET'           // da[
+  | 'INNER_BRACKET'     // di[
+  | 'RANDOM';           // arbitrary range
+
 export interface Position {
   line: number;  // 1-indexed
   col: number;   // 0-indexed
@@ -22,6 +33,7 @@ export interface DeleteTask {
   codeSnippet: string;
   targetRange: { from: number; to: number };
   expectedResult: string;
+  strategy: DeleteStrategy;
 }
 
 export type Task = PositionTask | DeleteTask;

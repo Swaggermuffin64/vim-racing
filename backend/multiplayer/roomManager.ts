@@ -29,7 +29,7 @@ export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
   private io: GameServer;
-  private NUM_TASKS: number = 1;
+  private NUM_TASKS: number = 5;
   constructor(io: GameServer) {
     this.io = io;
   }
@@ -57,17 +57,27 @@ export class RoomManager {
       readyToPlay: false
     };
 
-    const positionTasks: Task[] = generatePositionTasks(this.NUM_TASKS);
     const deleteTasks: Task[] = generateDeleteTasks(this.NUM_TASKS);
-    const allTasks = shuffle([...positionTasks, ...deleteTasks]);
-
+    console.log('Generated deleteTasks:', JSON.stringify(deleteTasks, null, 2));
+    
+    //add a finished task to the end of the tasks array
+    const finishedTask: Task = {
+      id: '',
+      type: 'navigate',
+      description: '',
+      codeSnippet: '',
+      targetPosition: { line: 1, col: 0 },
+      targetOffset: 0,
+    };
+    
     const room: GameRoom = {
       id: roomId,
       players: new Map([[playerId, player]]),
-      tasks: allTasks,
+      tasks: [...deleteTasks, finishedTask],
       num_tasks: this.NUM_TASKS,
       state: 'waiting',
     };
+
     this.rooms.set(roomId, room);
     this.playerRooms.set(playerId, roomId);
     
@@ -217,16 +227,6 @@ export class RoomManager {
 
     room.state = 'racing';
     room.startTime = Date.now();
-
-    // Reset all players
-    room.players.forEach(player => {
-      player.successIndicator.cursorOffset = 0;
-      player.isFinished = false;
-      player.taskProgress = 0;
-      player.finishTime = 0;
-      player.readyToPlay = false;
-    });
-
     console.log(`🏁 Race started in room ${roomId}`);
     this.io.to(roomId).emit('game:start', { startTime: room.startTime, initialTask: room.tasks[0], num_tasks: room.num_tasks});
   }
@@ -315,9 +315,6 @@ export class RoomManager {
     player.successIndicator.editorText = '';
     
     // Send task progress and new task to the user
-    console.log("player task progress", player.taskProgress);
-    console.log("new task", room.tasks[player.taskProgress]);
-    console.log("room tasks", room.tasks);
     socket.emit('game:player_finished_task', {
       playerId,
       taskProgress: player.taskProgress,
@@ -331,8 +328,6 @@ export class RoomManager {
     });
     
     // Return early if player not finished all tasks
-    console.log("player task progress", player.taskProgress);
-    console.log("room num tasks", room.num_tasks);
     if (player.taskProgress < room.num_tasks) {
       return;
     }
@@ -384,6 +379,14 @@ export class RoomManager {
 
     room.state = 'finished';
 
+    // Reset all player states
+    room.players.forEach(player => {
+      player.successIndicator.cursorOffset = 0;
+      player.successIndicator.editorText = '';
+      player.taskProgress = 0;
+      player.isFinished = false;
+      player.readyToPlay = false;
+    });
     // Calculate rankings
     const rankings = Array.from(room.players.values())
       .filter(p => p.isFinished)
@@ -408,7 +411,6 @@ export class RoomManager {
     });
 
     console.log(`🏆 Race complete in room ${roomId}:`, rankings);
-
     this.io.to(roomId).emit('game:complete', { rankings });
   }
 

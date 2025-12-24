@@ -189,6 +189,7 @@ export function useGameSocket(): UseGameSocketReturn {
 
     socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask }) => {
       console.log('Player', playerId, 'finished task', taskProgress);
+      console.log('New task:', JSON.stringify(newTask, null, 2));
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
@@ -406,6 +407,8 @@ export function useGameSocket(): UseGameSocketReturn {
   }, []);
 
   const sendCursorMove = useCallback((offset: number) => {
+    console.log("FAILING GAMESTATE" , gameState);
+    console.log("FAILING TASK");
     if (socketRef.current && gameState.task.type === 'navigate' && gameState.roomState === 'racing') {
       socketRef.current.emit('player:cursor', { offset });
     }
