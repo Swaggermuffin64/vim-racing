@@ -10,20 +10,7 @@ import type {
   SocketData 
 } from './multiplayer/types.js';
 import { RoomManager } from './multiplayer/roomManager.js';
-
-// Hathora injects HATHORA_PORT, fall back to BACKEND_PORT or PORT for other environments
-const BACKEND_PORT = parseInt(
-  process.env.HATHORA_PORT || process.env.PORT || process.env.BACKEND_PORT || '3001',
-  10
-);
-
-// CORS origins - add your production frontend URL to FRONTEND_URL env var
-// FRONTEND_URL can be comma-separated for multiple origins
-const CORS_ORIGINS = [
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map(url => url.trim()) : []),
-];
+import { IS_HATHORA, BACKEND_PORT, CORS_ORIGINS } from './config.js';
 
 // Create Fastify with its own server
 const fastify = Fastify({
@@ -170,8 +157,10 @@ io.on('connection', (socket) => {
 
 console.log(`\n🏎️  Vim Racing BACKEND running at http://localhost:${BACKEND_PORT}`);
 console.log(`🔌 WebSocket server ready`);
-if (process.env.HATHORA_PORT) {
+if (IS_HATHORA) {
   console.log(`🎮 Running in Hathora environment`);
+  console.log(`   Process ID: ${process.env.HATHORA_PROCESS_ID}`);
+  console.log(`   HATHORA_PORT: ${process.env.HATHORA_PORT || '(not set)'}`);
 }
 console.log('');
 

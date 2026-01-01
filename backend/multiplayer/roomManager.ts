@@ -9,6 +9,7 @@ import type {
 } from './types.js';
 import { generateDeleteTasks, generatePositionTasks } from '../tasks.js';
 import type { Task } from '../types.js';
+import { IS_HATHORA } from '../config.js';
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -446,7 +447,12 @@ export class RoomManager {
 
   private destroyRoom(roomId: string): void {
     const room = this.rooms.get(roomId);
-    if (!room) return;
+    if (!room) {
+      console.log(`⚠️ Room ${roomId} not found for destruction`);
+      return;
+    }
+
+    console.log(`🗑️ Destroying room ${roomId} (players: ${room.players.size}, state: ${room.state})`);
 
     // Notify players that room is being destroyed (if any still connected)
     if (room.players.size > 0) {
@@ -462,16 +468,21 @@ export class RoomManager {
     this.rooms.delete(roomId);
     this.cancelRoomCleanup(roomId);
 
-    console.log(`🗑️ Room ${roomId} destroyed`);
+    console.log(`✅ Room ${roomId} destroyed. Remaining rooms: ${this.rooms.size}`);
 
     // For Hathora: if no rooms remain and we're in Hathora environment, exit gracefully
-    if (this.rooms.size === 0 && process.env.HATHORA_PORT) {
-      console.log(`🎮 No active rooms remaining in Hathora environment - scheduling process exit`);
+    console.log(`🔍 Checking Hathora exit condition: IS_HATHORA=${IS_HATHORA}, rooms.size=${this.rooms.size}`);
+    
+    if (this.rooms.size === 0 && IS_HATHORA) {
+      console.log(`🎮 No active rooms remaining in Hathora environment - scheduling process exit in 5s`);
       // Give a short delay for any pending operations
       setTimeout(() => {
+        console.log(`⏰ Exit timer fired. Current rooms: ${this.rooms.size}`);
         if (this.rooms.size === 0) {
           console.log(`👋 Exiting Hathora process (no active rooms)`);
           process.exit(0);
+        } else {
+          console.log(`🔄 New room created during exit delay, cancelling exit`);
         }
       }, 5000);
     }
