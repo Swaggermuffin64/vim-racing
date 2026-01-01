@@ -17,6 +17,7 @@ export interface GameRoom {
   tasks: Task[];
   num_tasks: number;
   state: 'waiting' | 'countdown' | 'racing' | 'finished';
+  isPublic: boolean; // True for quick match rooms, false for private rooms
   startTime?: number;
   countdownStart?: number;
 }

@@ -48,7 +48,7 @@ export class RoomManager {
     return code;
   }
 
-  createRoom(socket: GameSocket, playerName: string, externalRoomId?: string): GameRoom {
+  createRoom(socket: GameSocket, playerName: string, externalRoomId?: string, isPublic: boolean = false): GameRoom {
     const roomId = externalRoomId || this.generateRoomId();
     const playerId = socket.id;
     
@@ -80,6 +80,7 @@ export class RoomManager {
       tasks: [...deleteTasks, finishedTask],
       num_tasks: this.NUM_TASKS,
       state: 'waiting',
+      isPublic,
     };
 
     this.rooms.set(roomId, room);
@@ -91,7 +92,7 @@ export class RoomManager {
     socket.data.playerId = playerId;
     socket.data.playerName = playerName;
 
-    console.log(`🏠 Room ${roomId} created by ${playerName}`);
+    console.log(`🏠 Room ${roomId} created by ${playerName} (${isPublic ? 'public' : 'private'})`);
     
     return room;
   }
@@ -405,10 +406,21 @@ export class RoomManager {
       }
     });
 
-    console.log(`🏆 Race complete in room ${roomId}:`, rankings);
+    console.log(`🏆 Race complete in room ${roomId} (${room.isPublic ? 'public' : 'private'}):`, rankings);
     this.io.to(roomId).emit('game:complete', { rankings });
 
-    // Reset all player states AFTER sending rankings
+    // For PUBLIC rooms (quick match): destroy immediately after a short delay
+    // Players can quick match again to find new opponents
+    if (room.isPublic) {
+      console.log(`🎯 Public room ${roomId} - scheduling immediate destruction`);
+      setTimeout(() => {
+        console.log(`🗑️ Auto-destroying public room ${roomId}`);
+        this.destroyRoom(roomId);
+      }, 3000); // 3 second delay to ensure clients receive rankings
+      return;
+    }
+
+    // For PRIVATE rooms: allow rematch, reset player states
     room.players.forEach(player => {
       player.successIndicator.cursorOffset = 0;
       player.successIndicator.editorText = '';
@@ -445,18 +457,19 @@ export class RoomManager {
     }
   }
 
-  private destroyRoom(roomId: string): void {
+  private destroyRoom(roomId: string, reason?: string): void {
     const room = this.rooms.get(roomId);
     if (!room) {
       console.log(`⚠️ Room ${roomId} not found for destruction`);
       return;
     }
 
-    console.log(`🗑️ Destroying room ${roomId} (players: ${room.players.size}, state: ${room.state})`);
+    console.log(`🗑️ Destroying room ${roomId} (players: ${room.players.size}, state: ${room.state}, public: ${room.isPublic})`);
 
     // Notify players that room is being destroyed (if any still connected)
     if (room.players.size > 0) {
-      this.io.to(roomId).emit('room:error', { message: 'Room closed due to inactivity' });
+      const message = reason || (room.isPublic ? 'Match ended' : 'Room closed due to inactivity');
+      this.io.to(roomId).emit('room:error', { message });
     }
 
     // Clean up player mappings
@@ -534,9 +547,9 @@ export class RoomManager {
   }
 
   findOrCreateQuickMatchRoom(socket: GameSocket, playerName: string): { room: GameRoom; isNewRoom: boolean } {
-    // Find a waiting room with space available
+    // Find a waiting PUBLIC room with space available (don't join private rooms)
     for (const [roomId, room] of this.rooms) {
-      if (room.state === 'waiting' && room.players.size < 2) {
+      if (room.state === 'waiting' && room.players.size < 2 && room.isPublic) {
         const joinedRoom = this.joinRoom(socket, roomId, playerName);
         if (joinedRoom) {
           console.log(`🎯 Quick match: ${playerName} joined existing room ${roomId}`);
@@ -545,9 +558,9 @@ export class RoomManager {
       }
     }
     
-    // No available room found, create a new one
-    console.log(`🏠 Quick match: Creating new room for ${playerName}`);
-    const newRoom = this.createRoom(socket, playerName);
+    // No available room found, create a new PUBLIC one
+    console.log(`🏠 Quick match: Creating new public room for ${playerName}`);
+    const newRoom = this.createRoom(socket, playerName, undefined, true);
     return { room: newRoom, isNewRoom: true };
   }
 
