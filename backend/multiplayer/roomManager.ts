@@ -28,8 +28,11 @@ function shuffle<T>(array: T[]): T[] {
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
+  private roomCleanupTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> cleanup timer
   private io: GameServer;
   private NUM_TASKS: number = 5;
+  private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
+  
   constructor(io: GameServer) {
     this.io = io;
   }
@@ -158,8 +161,7 @@ export class RoomManager {
 
     // Clean up empty rooms
     if (room.players.size === 0) {
-      this.rooms.delete(roomId);
-      console.log(`🗑️ Room ${roomId} deleted (empty)`);
+      this.destroyRoom(roomId);
     } 
     else if (room.state === 'racing' || room.state === 'countdown') {
       // If race was in progress, end it
@@ -379,15 +381,7 @@ export class RoomManager {
 
     room.state = 'finished';
 
-    // Reset all player states
-    room.players.forEach(player => {
-      player.successIndicator.cursorOffset = 0;
-      player.successIndicator.editorText = '';
-      player.taskProgress = 0;
-      player.isFinished = false;
-      player.readyToPlay = false;
-    });
-    // Calculate rankings
+    // Calculate rankings BEFORE resetting player states
     const rankings = Array.from(room.players.values())
       .filter(p => p.isFinished)
       .sort((a, b) => (a.finishTime || Infinity) - (b.finishTime || Infinity))
@@ -412,6 +406,75 @@ export class RoomManager {
 
     console.log(`🏆 Race complete in room ${roomId}:`, rankings);
     this.io.to(roomId).emit('game:complete', { rankings });
+
+    // Reset all player states AFTER sending rankings
+    room.players.forEach(player => {
+      player.successIndicator.cursorOffset = 0;
+      player.successIndicator.editorText = '';
+      player.taskProgress = 0;
+      player.isFinished = false;
+      player.readyToPlay = false;
+    });
+
+    // Schedule room cleanup if players don't start a new game
+    this.scheduleRoomCleanup(roomId);
+  }
+
+  private scheduleRoomCleanup(roomId: string): void {
+    // Clear any existing timer for this room
+    this.cancelRoomCleanup(roomId);
+
+    const timer = setTimeout(() => {
+      const room = this.rooms.get(roomId);
+      if (room && room.state === 'finished') {
+        console.log(`⏰ Room ${roomId} idle timeout - cleaning up`);
+        this.destroyRoom(roomId);
+      }
+    }, this.ROOM_IDLE_TIMEOUT_MS);
+
+    this.roomCleanupTimers.set(roomId, timer);
+    console.log(`⏱️ Scheduled cleanup for room ${roomId} in ${this.ROOM_IDLE_TIMEOUT_MS / 1000}s`);
+  }
+
+  private cancelRoomCleanup(roomId: string): void {
+    const timer = this.roomCleanupTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.roomCleanupTimers.delete(roomId);
+    }
+  }
+
+  private destroyRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    // Notify players that room is being destroyed (if any still connected)
+    if (room.players.size > 0) {
+      this.io.to(roomId).emit('room:error', { message: 'Room closed due to inactivity' });
+    }
+
+    // Clean up player mappings
+    room.players.forEach((player) => {
+      this.playerRooms.delete(player.id);
+    });
+
+    // Clean up room
+    this.rooms.delete(roomId);
+    this.cancelRoomCleanup(roomId);
+
+    console.log(`🗑️ Room ${roomId} destroyed`);
+
+    // For Hathora: if no rooms remain and we're in Hathora environment, exit gracefully
+    if (this.rooms.size === 0 && process.env.HATHORA_PORT) {
+      console.log(`🎮 No active rooms remaining in Hathora environment - scheduling process exit`);
+      // Give a short delay for any pending operations
+      setTimeout(() => {
+        if (this.rooms.size === 0) {
+          console.log(`👋 Exiting Hathora process (no active rooms)`);
+          process.exit(0);
+        }
+      }, 5000);
+    }
   }
 
   resetRoom(socket: GameSocket): void {
@@ -428,6 +491,9 @@ export class RoomManager {
       socket.emit('room:error', { message: 'Cannot reset: game not finished' });
       return;
     }
+
+    // Cancel any pending cleanup since players want to play again
+    this.cancelRoomCleanup(roomId);
 
     // Generate new tasks
     const positionTasks = generatePositionTasks(this.NUM_TASKS);
