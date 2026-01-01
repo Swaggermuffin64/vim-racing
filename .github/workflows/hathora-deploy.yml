@@ -12,27 +12,28 @@ jobs:
   deploy:
     name: Deploy Backend
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Install Hathora CLI
+        run: |
+          curl -fsSL "https://github.com/hathora/ci/releases/latest/download/hathora-linux-amd64" -o hathora
+          chmod +x hathora
+          sudo mv hathora /usr/local/bin/
 
       - name: Deploy to Hathora
+        working-directory: backend
+        env:
+          HATHORA_TOKEN: ${{ secrets.HATHORA_TOKEN }}
+          HATHORA_APP_ID: ${{ secrets.HATHORA_APP_ID }}
         run: |
-          npx @hathora/cli@latest deploy \
-            --appId ${{ secrets.HATHORA_APP_ID }} \
-            --token ${{ secrets.HATHORA_TOKEN }} \
-            --containerPort 3001 \
-            --transportType tls \
-            --planName tiny \
-            --roomsPerProcess 10 \
-            --buildTag ${{ github.sha }} \
-            --env '[{"name":"FRONTEND_URL","value":"${{ vars.FRONTEND_URL }}"}]'
-
+          hathora deploy \
+            --file . \
+            --container-port 3001 \
+            --transport-type tls \
+            --rooms-per-process 50 \
+            --idle-timeout-enabled \
+            --requested-cpu 0.5 \
+            --requested-memory-mb 1024 \
+            --build-tag ${{ github.sha }}

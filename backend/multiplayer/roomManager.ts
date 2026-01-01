@@ -456,6 +456,24 @@ export class RoomManager {
     });
   }
 
+  findOrCreateQuickMatchRoom(socket: GameSocket, playerName: string): { room: GameRoom; isNewRoom: boolean } {
+    // Find a waiting room with space available
+    for (const [roomId, room] of this.rooms) {
+      if (room.state === 'waiting' && room.players.size < 2) {
+        const joinedRoom = this.joinRoom(socket, roomId, playerName);
+        if (joinedRoom) {
+          console.log(`🎯 Quick match: ${playerName} joined existing room ${roomId}`);
+          return { room: joinedRoom, isNewRoom: false };
+        }
+      }
+    }
+    
+    // No available room found, create a new one
+    console.log(`🏠 Quick match: Creating new room for ${playerName}`);
+    const newRoom = this.createRoom(socket, playerName);
+    return { room: newRoom, isNewRoom: true };
+  }
+
   getRoom(roomId: string): GameRoom | undefined {
     return this.rooms.get(roomId);
   }

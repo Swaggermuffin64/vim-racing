@@ -54,6 +54,7 @@ interface UseGameSocketReturn {
   // Actions
   createRoom: (playerName: string) => void;
   joinRoom: (roomId: string, playerName: string) => void;
+  quickMatch: (playerName: string) => void;
   leaveRoom: () => void;
   readyToPlay: () => void;
   sendCursorMove: (offset: number) => void;
@@ -273,13 +274,32 @@ export function useGameSocket(): UseGameSocketReturn {
       throw new Error('Hathora client not initialized');
     }
 
+    // First check room status to help debug issues
+    try {
+      const roomInfo = await hathoraClient.roomsV2.getRoomInfo(roomId);
+      console.log('🔍 Room status:', roomInfo.status, 'for room:', roomId);
+      
+      if (roomInfo.status === 'destroyed') {
+        throw new Error('Room was destroyed - server may have crashed on startup');
+      }
+      
+      if (roomInfo.status === 'suspended') {
+        throw new Error('Room is suspended');
+      }
+    } catch (err: any) {
+      // If we can't get room info, still try connection info
+      console.log('⚠️ Could not get room info:', err?.message);
+    }
+
     const connectionInfo = await hathoraClient.roomsV2.getConnectionInfo(roomId);
     
     if (connectionInfo.status !== 'active' || !connectionInfo.exposedPort) {
-      throw new Error('Room not ready yet');
+      console.log('⏳ Room status:', connectionInfo.status, '- waiting for active state');
+      throw new Error(`Room not ready yet (status: ${connectionInfo.status})`);
     }
 
     const { host, port } = connectionInfo.exposedPort;
+    console.log('✅ Got connection info:', { host, port });
     return `https://${host}:${port}`;
   }, []);
 
@@ -392,6 +412,103 @@ export function useGameSocket(): UseGameSocketReturn {
     }
   }, [connectSocket, getHathoraConnectionInfo]);
 
+  const quickMatch = useCallback(async (playerName: string) => {
+    if (USE_HATHORA) {
+      // Hathora flow: find or create a public lobby for quick match
+      try {
+        setIsConnecting(true);
+        setError(null);
+
+        const hathoraClient = await getHathoraClient();
+        if (!hathoraClient) {
+          throw new Error('Hathora client not initialized');
+        }
+
+        const playerToken = await getPlayerToken();
+
+        // 1. List available public lobbies
+        console.log('🔍 Searching for available quick match lobbies...');
+        const lobbies = await hathoraClient.lobbiesV3.listActivePublicLobbies(HATHORA_APP_ID);
+        
+        // 2. Find a lobby that's waiting for players (with retry logic for stale data)
+        let joined = false;
+        const quickMatchLobbies = lobbies.filter((lobby: { roomConfig?: string; roomId: string }) => {
+          try {
+            const config = JSON.parse(lobby.roomConfig || '{}');
+            return config.quickMatch === true;
+          } catch {
+            return false;
+          }
+        });
+
+        console.log(`📋 Found ${quickMatchLobbies.length} quick match lobbies`);
+
+        // Try to join existing lobbies (retry up to 3)
+        for (const lobby of quickMatchLobbies.slice(0, 3)) {
+          try {
+            console.log('🎯 Attempting to join lobby:', lobby.roomId);
+            const connectionUrl = await getHathoraConnectionInfo(lobby.roomId);
+            await connectSocket(connectionUrl);
+            
+            // Try to join - backend will reject if full
+            socketRef.current?.emit('room:join', { roomId: lobby.roomId, playerName });
+            joined = true;
+            break;
+          } catch (err) {
+            console.log('⏭️ Lobby unavailable, trying next...', err);
+            continue;
+          }
+        }
+
+        // 3. If no lobby available, create a new public one
+        if (!joined) {
+          console.log('🏠 No available lobbies, creating new quick match lobby...');
+          const lobby = await hathoraClient.lobbiesV3.createLobby(
+            { playerAuth: playerToken },
+            {
+              visibility: 'public',
+              region: 'Seattle',
+              roomConfig: JSON.stringify({ 
+                quickMatch: true,
+                createdBy: playerName,
+              }),
+            }
+          );
+
+          const roomId = lobby.roomId;
+          console.log('🎮 Quick match lobby created:', roomId);
+
+          // Wait for room to be ready
+          let connectionUrl: string | null = null;
+          for (let i = 0; i < 10; i++) {
+            try {
+              connectionUrl = await getHathoraConnectionInfo(roomId);
+              break;
+            } catch {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+
+          if (!connectionUrl) {
+            throw new Error('Failed to get connection info');
+          }
+
+          await connectSocket(connectionUrl);
+          socketRef.current?.emit('room:create', { playerName, roomId });
+        }
+      } catch (err: any) {
+        console.error('❌ Quick match failed:', err);
+        setError(`Quick match failed: ${err?.message || 'Unknown error'}`);
+        setIsConnecting(false);
+      }
+    } else {
+      // Local flow: emit quick match to backend
+      if (socketRef.current) {
+        socketRef.current.emit('room:quick_match', { playerName });
+      }
+    }
+  }, [connectSocket, getHathoraConnectionInfo]);
+
   const leaveRoom = useCallback(() => {
     if (socketRef.current) {
       socketRef.current.emit('room:leave');
@@ -437,6 +554,7 @@ export function useGameSocket(): UseGameSocketReturn {
     error,
     createRoom,
     joinRoom,
+    quickMatch,
     leaveRoom,
     readyToPlay,
     sendCursorMove,

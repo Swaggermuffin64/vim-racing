@@ -25,6 +25,7 @@ export interface GameRoom {
 export interface ClientToServerEvents {
   'room:create': (data: { playerName: string; roomId?: string}) => void;
   'room:join': (data: { roomId: string; playerName: string }) => void;
+  'room:quick_match': (data: { playerName: string }) => void;
   'room:leave': () => void;
   'player:ready_to_play': () => void;
   'player:cursor': (data: { offset: number }) => void;

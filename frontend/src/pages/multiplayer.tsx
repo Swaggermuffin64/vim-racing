@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { EditorState, Compartment } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";
 import {
@@ -240,6 +241,9 @@ const styles: Record<string, React.CSSProperties> = {
 };
 
 const MultiplayerGame: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const initialMode = searchParams.get('mode') as 'quick' | 'private' | null;
+  
   const {
     isConnected,
     isConnecting,
@@ -247,6 +251,7 @@ const MultiplayerGame: React.FC = () => {
     error,
     createRoom,
     joinRoom,
+    quickMatch,
     leaveRoom,
     readyToPlay,
     sendCursorMove,
@@ -482,9 +487,11 @@ const MultiplayerGame: React.FC = () => {
           isConnected={isConnected}
           isConnecting={isConnecting}
           useHathora={import.meta.env.VITE_USE_HATHORA === 'true'}
+          initialMode={initialMode}
           error={error}
           onCreateRoom={createRoom}
           onJoinRoom={joinRoom}
+          onQuickMatch={quickMatch}
         />
       </div>
     );
@@ -497,6 +504,7 @@ const MultiplayerGame: React.FC = () => {
           roomId={gameState.roomId!}
           players={gameState.players}
           myPlayerId={gameState.myPlayerId}
+          isQuickPlay={initialMode === 'quick'}
           onReady={readyToPlay}
           onLeave={leaveRoom}
         />

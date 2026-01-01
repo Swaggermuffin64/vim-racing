@@ -4,9 +4,11 @@ interface LobbyProps {
   isConnected: boolean;
   isConnecting?: boolean;
   useHathora?: boolean; // In Hathora mode, connection happens on room create/join
+  initialMode?: 'quick' | 'private' | null; // Pre-select a mode from URL params
   error: string | null;
   onCreateRoom: (playerName: string) => void;
   onJoinRoom: (roomId: string, playerName: string) => void;
+  onQuickMatch: (playerName: string) => void;
 }
 
 const colors = {
@@ -175,13 +177,17 @@ export const Lobby: React.FC<LobbyProps> = ({
   isConnected,
   isConnecting = false,
   useHathora = false,
+  initialMode = null,
   error,
   onCreateRoom,
   onJoinRoom,
+  onQuickMatch,
 }) => {
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
-  const [mode, setMode] = useState<'select' | 'create' | 'join'>('select');
+  
+  // For private mode, track if we're joining (create is immediate)
+  const [privateSubMode, setPrivateSubMode] = useState<'select' | 'join'>('select');
 
   const handleCreate = () => {
     if (playerName.trim()) {
@@ -193,6 +199,12 @@ export const Lobby: React.FC<LobbyProps> = ({
     if (playerName.trim() && roomCode.trim()) {
       // Pass room code as-is (Hathora IDs are case-sensitive)
       onJoinRoom(roomCode.trim(), playerName.trim());
+    }
+  };
+
+  const handleQuickMatch = () => {
+    if (playerName.trim()) {
+      onQuickMatch(playerName.trim());
     }
   };
 
@@ -215,132 +227,194 @@ export const Lobby: React.FC<LobbyProps> = ({
     return isConnected ? 'Connected' : 'Connecting...';
   };
 
+  const getTitle = () => {
+    if (initialMode === 'quick') return 'Quick Play';
+    if (initialMode === 'private') return 'Private Match';
+    return 'Multiplayer';
+  };
+
+  const getSubtitle = () => {
+    if (initialMode === 'quick') return 'Find an opponent instantly';
+    if (initialMode === 'private') return 'Play with friends using a room code';
+    return 'Race your friends with Vim motions';
+  };
+
+  const handleBack = () => {
+    window.location.href = '/';
+  };
+
+  // Quick Play flow
+  if (initialMode === 'quick') {
+    return (
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>{getTitle()}</h1>
+          <p style={styles.subtitle}>{getSubtitle()}</p>
+          
+          <div style={styles.connectionStatus}>
+            <div
+              style={{
+                ...styles.dot,
+                background: getStatusColor(),
+                boxShadow: `0 0 8px ${getStatusColor()}`,
+              }}
+            />
+            <span style={{ color: getStatusColor() }}>
+              {getStatusText()}
+            </span>
+          </div>
+        </div>
+
+        {error && <div style={styles.error}>{error}</div>}
+
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>Your Name</div>
+          <input
+            type="text"
+            placeholder="Enter your name..."
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            style={styles.input}
+            maxLength={20}
+          />
+        </div>
+
+        <button
+          style={{
+            ...styles.button,
+            background: `linear-gradient(135deg, ${colors.success} 0%, #059669 100%)`,
+            ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
+          }}
+          onClick={handleQuickMatch}
+          disabled={!canInteract || !playerName.trim() || isLoading}
+        >
+          {isLoading ? 'Finding match...' : 'Find Match'}
+        </button>
+
+        <button
+          style={styles.backButton}
+          onClick={handleBack}
+          disabled={isLoading}
+        >
+          ← Back
+        </button>
+      </div>
+    );
+  }
+
+  // Private Match flow
+  if (initialMode === 'private') {
+    return (
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>{getTitle()}</h1>
+          <p style={styles.subtitle}>{getSubtitle()}</p>
+          
+          <div style={styles.connectionStatus}>
+            <div
+              style={{
+                ...styles.dot,
+                background: getStatusColor(),
+                boxShadow: `0 0 8px ${getStatusColor()}`,
+              }}
+            />
+            <span style={{ color: getStatusColor() }}>
+              {getStatusText()}
+            </span>
+          </div>
+        </div>
+
+        {error && <div style={styles.error}>{error}</div>}
+
+        {/* Name input - always shown */}
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>Your Name</div>
+          <input
+            type="text"
+            placeholder="Enter your name..."
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value)}
+            style={styles.input}
+            maxLength={20}
+          />
+        </div>
+
+        {/* Create or Join buttons */}
+        {privateSubMode === 'select' && (
+          <>
+            <button
+              style={{
+                ...styles.button,
+                marginBottom: '12px',
+                ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
+              }}
+              onClick={handleCreate}
+              disabled={!canInteract || !playerName.trim() || isLoading}
+            >
+              {isLoading ? 'Creating...' : 'Create Room'}
+            </button>
+            <button
+              style={{
+                ...styles.button,
+                ...styles.buttonOutline,
+                ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
+              }}
+              onClick={() => playerName.trim() && setPrivateSubMode('join')}
+              disabled={!canInteract || !playerName.trim() || isLoading}
+            >
+              Join Room
+            </button>
+          </>
+        )}
+
+        {/* Join Room */}
+        {privateSubMode === 'join' && (
+          <>
+            <div style={{ ...styles.card, marginBottom: '16px' }}>
+              <div style={styles.cardTitle}>Room Code</div>
+              <input
+                type="text"
+                placeholder="Paste room ID here..."
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value)}
+                style={styles.input}
+                maxLength={50}
+              />
+            </div>
+            <button
+              style={{
+                ...styles.button,
+                ...((!roomCode.trim() || isLoading) ? styles.buttonDisabled : {}),
+              }}
+              onClick={handleJoin}
+              disabled={!canInteract || !roomCode.trim() || isLoading}
+            >
+              {isLoading ? 'Joining...' : 'Join Room'}
+            </button>
+          </>
+        )}
+
+        <button
+          style={styles.backButton}
+          onClick={privateSubMode === 'select' ? handleBack : () => setPrivateSubMode('select')}
+          disabled={isLoading}
+        >
+          ← Back
+        </button>
+      </div>
+    );
+  }
+
+  // Fallback (shouldn't happen if routed correctly, but just in case)
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>🏎️ Multiplayer</h1>
-        <p style={styles.subtitle}>Race your friends with Vim motions</p>
-        
-        <div style={styles.connectionStatus}>
-          <div
-            style={{
-              ...styles.dot,
-              background: getStatusColor(),
-              boxShadow: `0 0 8px ${getStatusColor()}`,
-            }}
-          />
-          <span style={{ color: getStatusColor() }}>
-            {getStatusText()}
-          </span>
-        </div>
+        <h1 style={styles.title}>{getTitle()}</h1>
+        <p style={styles.subtitle}>{getSubtitle()}</p>
       </div>
-
-      {error && <div style={styles.error}>{error}</div>}
-
-      {mode === 'select' && (
-        <>
-          <div style={styles.card}>
-            <div style={styles.cardTitle}>Your Name</div>
-            <input
-              type="text"
-              placeholder="Enter your name..."
-              value={playerName}
-              onChange={(e) => setPlayerName(e.target.value)}
-              style={styles.input}
-              maxLength={20}
-            />
-          </div>
-
-          <button
-            style={{
-              ...styles.button,
-              ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
-            }}
-            onClick={() => playerName.trim() && setMode('create')}
-            disabled={!canInteract || !playerName.trim() || isLoading}
-          >
-            Create Room
-          </button>
-
-          <div style={styles.divider}>
-            <div style={styles.dividerLine} />
-            <span style={styles.dividerText}>or</span>
-            <div style={styles.dividerLine} />
-          </div>
-
-          <button
-            style={{
-              ...styles.button,
-              ...styles.buttonOutline,
-              ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
-            }}
-            onClick={() => playerName.trim() && setMode('join')}
-            disabled={!canInteract || !playerName.trim() || isLoading}
-          >
-            Join Room
-          </button>
-        </>
-      )}
-
-      {mode === 'create' && (
-        <div style={styles.card}>
-          <div style={styles.cardTitle}>Create a Room</div>
-          <p style={{ color: colors.textSecondary, marginBottom: '20px', fontSize: '15px' }}>
-            Playing as <span style={styles.playerBadge}>{playerName}</span>
-          </p>
-          <button
-            style={{
-              ...styles.button,
-              ...(isLoading ? styles.buttonDisabled : {}),
-            }}
-            onClick={handleCreate}
-            disabled={!canInteract || isLoading}
-          >
-            {isLoading ? 'Creating...' : 'Create Room'}
-          </button>
-          <button
-            style={styles.backButton}
-            onClick={() => setMode('select')}
-            disabled={isLoading}
-          >
-            ← Back
-          </button>
-        </div>
-      )}
-
-      {mode === 'join' && (
-        <div style={styles.card}>
-          <div style={styles.cardTitle}>Join a Room</div>
-          <p style={{ color: colors.textSecondary, marginBottom: '20px', fontSize: '15px' }}>
-            Playing as <span style={styles.playerBadge}>{playerName}</span>
-          </p>
-          <input
-            type="text"
-            placeholder="Paste room ID here..."
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value)}
-            style={{ ...styles.input, marginBottom: '16px' }}
-            maxLength={50}
-          />
-          <button
-            style={{
-              ...styles.button,
-              ...((!roomCode.trim() || isLoading) ? styles.buttonDisabled : {}),
-            }}
-            onClick={handleJoin}
-            disabled={!canInteract || !roomCode.trim() || isLoading}
-          >
-            {isLoading ? 'Joining...' : 'Join Room'}
-          </button>
-          <button
-            style={styles.backButton}
-            onClick={() => setMode('select')}
-            disabled={isLoading}
-          >
-            ← Back
-          </button>
-        </div>
-      )}
+      <button style={styles.backButton} onClick={handleBack}>
+        ← Back to Home
+      </button>
     </div>
   );
 };

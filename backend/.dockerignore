@@ -34,7 +34,6 @@ WARP.md
 fly.toml
 hathora.yml
 docker-compose.yml
-Dockerfile*
 
 # Testing
 coverage

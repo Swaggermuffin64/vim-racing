@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { Player } from '../types/multiplayer';
 
 interface WaitingRoomProps {
   roomId: string;
   players: Player[];
   myPlayerId: string | null;
+  isQuickPlay?: boolean;
   onReady: () => void;
   onLeave: () => void;
 }
@@ -17,6 +18,9 @@ const colors = {
   accent: '#a78bfa',
   accentLight: '#c4b5fd',
   accentGlow: 'rgba(167, 139, 250, 0.25)',
+  
+  success: '#10b981',
+  successLight: '#34d399',
   
   textPrimary: '#f1f5f9',
   textSecondary: '#94a3b8',
@@ -187,18 +191,90 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '12px',
     justifyContent: 'center',
   },
+  // Quick Play styles
+  quickPlayContainer: {
+    maxWidth: '480px',
+    margin: '0 auto',
+    padding: '80px 32px',
+    textAlign: 'center' as const,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+  },
+  searchingText: {
+    fontSize: '24px',
+    fontWeight: 600,
+    color: colors.textPrimary,
+    marginBottom: '48px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  dots: {
+    display: 'inline-block',
+    width: '24px',
+    textAlign: 'left' as const,
+  },
+  matchFoundText: {
+    fontSize: '24px',
+    fontWeight: 600,
+    color: colors.successLight,
+    marginBottom: '24px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  opponentName: {
+    fontSize: '18px',
+    fontWeight: 600,
+    color: colors.textPrimary,
+    fontFamily: '"JetBrains Mono", monospace',
+    marginBottom: '32px',
+    padding: '16px 24px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.success}40`,
+    borderRadius: '12px',
+  },
+  startingText: {
+    fontSize: '14px',
+    color: colors.textMuted,
+    marginBottom: '32px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  cancelButton: {
+    padding: '14px 28px',
+    fontSize: '14px',
+    fontWeight: 600,
+    background: 'transparent',
+    border: `1px solid ${colors.border}`,
+    borderRadius: '10px',
+    color: colors.textMuted,
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    transition: 'all 0.2s ease',
+  },
 };
 
 export const WaitingRoom: React.FC<WaitingRoomProps> = ({
   roomId,
   players,
   myPlayerId,
+  isQuickPlay = false,
   onReady,
   onLeave,
 }) => {
   const [copied, setCopied] = React.useState(false);
   const me = players.find(p => p.id === myPlayerId);
+  const opponent = players.find(p => p.id !== myPlayerId);
   const isReady = me?.readyToPlay ?? false;
+  const hasOpponent = players.length === 2;
+
+  // Auto-ready for quick play when opponent joins
+  useEffect(() => {
+    if (isQuickPlay && hasOpponent && !isReady) {
+      // Small delay so the UI can show "Match Found" briefly
+      const timer = setTimeout(() => {
+        onReady();
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [isQuickPlay, hasOpponent, isReady, onReady]);
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId);
@@ -206,6 +282,59 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Quick Play UI
+  if (isQuickPlay) {
+    return (
+      <div style={styles.quickPlayContainer}>
+        <style>
+          {`
+            @keyframes dots {
+              0%, 20% { content: ''; }
+              40% { content: '.'; }
+              60% { content: '..'; }
+              80%, 100% { content: '...'; }
+            }
+            .animated-dots::after {
+              content: '';
+              animation: dots 1.5s steps(1, end) infinite;
+            }
+          `}
+        </style>
+
+        {!hasOpponent ? (
+          // Searching state
+          <>
+            <div style={styles.searchingText}>
+              Searching for players<span className="animated-dots" style={styles.dots}></span>
+            </div>
+
+            <button style={styles.cancelButton} onClick={onLeave}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          // Match found state
+          <>
+            <div style={styles.matchFoundText}>Match found</div>
+            
+            <div style={styles.opponentName}>
+              vs {opponent?.name || 'Opponent'}
+            </div>
+
+            <div style={styles.startingText}>
+              Starting<span className="animated-dots" style={styles.dots}></span>
+            </div>
+
+            <button style={styles.cancelButton} onClick={onLeave}>
+              Cancel
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Private Match UI (original)
   return (
     <div style={styles.container}>
       <style>

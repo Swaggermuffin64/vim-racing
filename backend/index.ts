@@ -126,6 +126,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Quick match - find or create a room automatically
+  socket.on('room:quick_match', ({ playerName }) => {
+    const { room, isNewRoom } = roomManager.findOrCreateQuickMatchRoom(socket, playerName);
+    const player = room.players.get(socket.id)!;
+    
+    if (isNewRoom) {
+      socket.emit('room:created', { roomId: room.id, player });
+    } else {
+      socket.emit('room:joined', {
+        roomId: room.id,
+        players: roomManager.getPlayersArray(room),
+      });
+    }
+  });
+
   // Leave room
   socket.on('room:leave', () => {
     roomManager.leaveRoom(socket);

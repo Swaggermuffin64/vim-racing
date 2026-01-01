@@ -14,6 +14,18 @@ const colors = {
   accentLight: '#c4b5fd',
   accentGlow: 'rgba(167, 139, 250, 0.25)',
   
+  // Quick Play - vibrant green
+  quickPlay: '#10b981',
+  quickPlayGlow: 'rgba(16, 185, 129, 0.25)',
+  
+  // Private Match - purple accent
+  privateMatch: '#a78bfa',
+  privateMatchGlow: 'rgba(167, 139, 250, 0.25)',
+  
+  // Practice - cyan
+  practice: '#06b6d4',
+  practiceGlow: 'rgba(6, 182, 212, 0.25)',
+  
   textPrimary: '#f1f5f9',
   textSecondary: '#94a3b8',
   textMuted: '#64748b',
@@ -49,36 +61,50 @@ const homeStyles: Record<string, React.CSSProperties> = {
   },
   buttons: {
     display: 'flex',
-    gap: '32px',
+    gap: '24px',
     flexWrap: 'wrap',
     justifyContent: 'center',
+    maxWidth: '1000px',
+  },
+  cardLink: {
+    textDecoration: 'none',
+    display: 'flex',
   },
   card: {
     background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
     border: `1px solid ${colors.border}`,
     borderRadius: '16px',
-    padding: '36px',
-    width: '300px',
+    padding: '32px',
+    width: '280px',
     textDecoration: 'none',
     transition: 'all 0.3s ease',
     cursor: 'pointer',
-  },
-  cardIcon: {
-    fontSize: '52px',
-    marginBottom: '20px',
+    display: 'flex',
+    flexDirection: 'column' as const,
   },
   cardTitle: {
-    fontSize: '24px',
+    fontSize: '22px',
     fontWeight: 700,
     color: colors.textPrimary,
-    marginBottom: '12px',
+    marginBottom: '10px',
     fontFamily: '"JetBrains Mono", monospace',
   },
   cardDescription: {
-    fontSize: '14px',
+    fontSize: '13px',
     color: colors.textMuted,
     lineHeight: 1.6,
     fontFamily: '"JetBrains Mono", monospace',
+  },
+  badge: {
+    display: 'inline-block',
+    alignSelf: 'flex-start',
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: 700,
+    letterSpacing: '0.5px',
+    marginBottom: '16px',
+    textTransform: 'uppercase' as const,
   },
 };
 
@@ -91,13 +117,14 @@ function Home() {
       </p>
       
       <div style={homeStyles.buttons}>
-        <Link to="/practice" style={{ textDecoration: 'none' }}>
+        {/* Quick Play Card */}
+        <Link to="/multiplayer?mode=quick" style={homeStyles.cardLink}>
           <div
             style={homeStyles.card}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.borderColor = colors.borderHover;
-              e.currentTarget.style.boxShadow = `0 8px 24px ${colors.accentGlow}`;
+              e.currentTarget.style.borderColor = colors.quickPlay;
+              e.currentTarget.style.boxShadow = `0 8px 32px ${colors.quickPlayGlow}`;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
@@ -105,21 +132,31 @@ function Home() {
               e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <div style={homeStyles.cardIcon}>🎯</div>
-            <div style={homeStyles.cardTitle}>Practice</div>
+            <div 
+              style={{
+                ...homeStyles.badge,
+                background: `${colors.quickPlay}20`,
+                color: colors.quickPlay,
+                border: `1px solid ${colors.quickPlay}40`,
+              }}
+            >
+              Fastest
+            </div>
+            <div style={homeStyles.cardTitle}>Quick Play</div>
             <div style={homeStyles.cardDescription}>
-              Solo practice mode. Complete navigation challenges at your own pace.
+              Jump into a match instantly. Get paired with another player automatically.
             </div>
           </div>
         </Link>
 
-        <Link to="/multiplayer" style={{ textDecoration: 'none' }}>
+        {/* Private Match Card */}
+        <Link to="/multiplayer?mode=private" style={homeStyles.cardLink}>
           <div
             style={homeStyles.card}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.borderColor = colors.borderHover;
-              e.currentTarget.style.boxShadow = `0 8px 24px ${colors.accentGlow}`;
+              e.currentTarget.style.borderColor = colors.privateMatch;
+              e.currentTarget.style.boxShadow = `0 8px 32px ${colors.privateMatchGlow}`;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
@@ -127,10 +164,51 @@ function Home() {
               e.currentTarget.style.boxShadow = 'none';
             }}
           >
-            <div style={homeStyles.cardIcon}>🏎️</div>
-            <div style={homeStyles.cardTitle}>Multiplayer</div>
+            <div 
+              style={{
+                ...homeStyles.badge,
+                background: `${colors.privateMatch}20`,
+                color: colors.privateMatch,
+                border: `1px solid ${colors.privateMatch}40`,
+              }}
+            >
+              With Friends
+            </div>
+            <div style={homeStyles.cardTitle}>Private Match</div>
             <div style={homeStyles.cardDescription}>
-              Race against friends! Create a room or join with a code.
+              Create a private room or join with a code. Race against friends!
+            </div>
+          </div>
+        </Link>
+
+        {/* Practice Card */}
+        <Link to="/practice" style={homeStyles.cardLink}>
+          <div
+            style={homeStyles.card}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.borderColor = colors.practice;
+              e.currentTarget.style.boxShadow = `0 8px 32px ${colors.practiceGlow}`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = colors.border;
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            <div 
+              style={{
+                ...homeStyles.badge,
+                background: `${colors.practice}20`,
+                color: colors.practice,
+                border: `1px solid ${colors.practice}40`,
+              }}
+            >
+              Solo
+            </div>
+            <div style={homeStyles.cardTitle}>Practice</div>
+            <div style={homeStyles.cardDescription}>
+              Hone your Vim skills. Complete challenges at your own pace.
             </div>
           </div>
         </Link>
