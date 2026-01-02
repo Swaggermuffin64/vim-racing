@@ -5,7 +5,6 @@ export interface QueuedPlayer {
   name: string;
   socket: WebSocket;
   queuedAt: number;
-  region?: string;
 }
 
 export interface MatchResult {
@@ -16,7 +15,7 @@ export interface MatchResult {
 
 // Messages from client to server
 export type ClientMessage =
-  | { type: 'queue:join'; playerName: string; region?: string }
+  | { type: 'queue:join'; playerName: string }
   | { type: 'queue:leave' }
   | { type: 'ping' };
 

@@ -1,7 +1,6 @@
 import type { WebSocket } from 'ws';
 import { Mutex } from 'async-mutex';
 import { HathoraCloud } from '@hathora/cloud-sdk-typescript';
-import { Region } from '@hathora/cloud-sdk-typescript/models/components';
 import type { QueuedPlayer, ServerMessage, MatchResult } from './types.js';
 
 function createHathoraClient() {
@@ -20,21 +19,15 @@ export class Matchmaker {
   private mutex = new Mutex();
   private readonly hathoraClient: HathoraCloud;
   private readonly playersPerMatch: number;
-  private readonly region: Region;
 
-  constructor(options?: {
-    playersPerMatch?: number;
-    region?: Region;
-  }) {
+  constructor(options?: { playersPerMatch?: number }) {
     this.hathoraClient = createHathoraClient();
     this.playersPerMatch = options?.playersPerMatch ?? 2;
-    this.region = options?.region ?? Region.Seattle;
   }
 
   start() {
     console.log('🎮 Matchmaker started');
     console.log(`   Players per match: ${this.playersPerMatch}`);
-    console.log(`   Region: ${this.region}`);
   }
 
   stop() {
@@ -161,7 +154,7 @@ export class Matchmaker {
   private async createHathoraRoom(players: QueuedPlayer[]): Promise<MatchResult> {
     // Create room using Rooms API (requires dev token)
     const room = await this.hathoraClient.roomsV2.createRoom({
-      region: this.region,
+      region: 'Washington_DC',
       roomConfig: JSON.stringify({
         quickMatch: true,
         matchedPlayers: players.map((p) => ({ id: p.id, name: p.name })),

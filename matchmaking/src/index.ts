@@ -1,13 +1,11 @@
 import 'dotenv/config';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
-import { Region } from '@hathora/cloud-sdk-typescript/models/components';
 import { Matchmaker } from './matchmaker.js';
 import type { ClientMessage, ServerMessage, QueuedPlayer } from './types.js';
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const PLAYERS_PER_MATCH = parseInt(process.env.PLAYERS_PER_MATCH || '2', 10);
-const REGION = (process.env.HATHORA_REGION as Region) || Region.Seattle;
 
 // Validate required env vars
 if (!process.env.HATHORA_APP_ID || !process.env.HATHORA_TOKEN) {
@@ -22,7 +20,6 @@ if (!process.env.HATHORA_APP_ID || !process.env.HATHORA_TOKEN) {
 
 const matchmaker = new Matchmaker({
   playersPerMatch: PLAYERS_PER_MATCH,
-  region: REGION,
 });
 
 const wss = new WebSocketServer({ port: PORT });
@@ -62,7 +59,6 @@ async function handleMessage(socket: WebSocket, connectionId: string, message: C
         name: message.playerName || 'Anonymous',
         socket,
         queuedAt: Date.now(),
-        region: message.region,
       };
 
       const position = await matchmaker.addPlayer(player);
@@ -118,6 +114,5 @@ process.on('SIGINT', () => {
 matchmaker.start();
 console.log(`🚀 Matchmaking server running on ws://localhost:${PORT}`);
 console.log(`   Hathora App ID: ${process.env.HATHORA_APP_ID?.slice(0, 20)}...`);
-console.log(`   Region: ${REGION}`);
 console.log(`   Players per match: ${PLAYERS_PER_MATCH}`);
 
