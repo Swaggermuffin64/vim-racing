@@ -36,4 +36,6 @@ jobs:
             --idle-timeout-enabled \
             --requested-cpu 0.5 \
             --requested-memory-mb 1024 \
-            --build-tag ${{ github.sha }}
+            --build-tag ${{ github.sha }} \
+            --env HATHORA_APP_ID=${{ secrets.HATHORA_APP_ID }} \
+            --env HATHORA_DEV_TOKEN=${{ secrets.HATHORA_DEV_TOKEN }}
