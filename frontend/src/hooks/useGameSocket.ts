@@ -412,9 +412,55 @@ export function useGameSocket(): UseGameSocketReturn {
     }
   }, [connectSocket, getHathoraConnectionInfo]);
 
+  // Helper to create a new Hathora quick match lobby
+  const createHathoraQuickMatchLobby = useCallback(async (playerName: string) => {
+    const hathoraClient = await getHathoraClient();
+    if (!hathoraClient) {
+      throw new Error('Hathora client not initialized');
+    }
+
+    const playerToken = await getPlayerToken();
+
+    console.log('🏠 Creating new quick match lobby...');
+    const lobby = await hathoraClient.lobbiesV3.createLobby(
+      { playerAuth: playerToken },
+      {
+        visibility: 'public',
+        region: 'Seattle',
+        roomConfig: JSON.stringify({ 
+          quickMatch: true,
+          createdBy: playerName,
+        }),
+      }
+    );
+
+    const roomId = lobby.roomId;
+    console.log('🎮 Quick match lobby created:', roomId);
+
+    // Wait for room to be ready
+    let connectionUrl: string | null = null;
+    for (let i = 0; i < 10; i++) {
+      try {
+        connectionUrl = await getHathoraConnectionInfo(roomId);
+        break;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    if (!connectionUrl) {
+      throw new Error('Failed to get connection info');
+    }
+
+    await connectSocket(connectionUrl);
+    socketRef.current?.emit('room:create', { playerName, roomId });
+  }, [connectSocket, getHathoraConnectionInfo]);
+
   const quickMatch = useCallback(async (playerName: string) => {
     if (USE_HATHORA) {
-      // Hathora flow: find or create a public lobby for quick match
+      // Hathora flow: JOIN-FIRST strategy with freshness filter
+      // Only try RECENT lobbies (others are likely already in-game)
+      // Try ONE fresh lobby, then create if it fails
       try {
         setIsConnecting(true);
         setError(null);
@@ -424,78 +470,70 @@ export function useGameSocket(): UseGameSocketReturn {
           throw new Error('Hathora client not initialized');
         }
 
-        const playerToken = await getPlayerToken();
-
-        // 1. List available public lobbies
-        console.log('🔍 Searching for available quick match lobbies...');
+        // 1. Check for existing lobbies
+        console.log('🔍 Searching for waiting players...');
         const lobbies = await hathoraClient.lobbiesV3.listActivePublicLobbies(HATHORA_APP_ID);
         
-        // 2. Find a lobby that's waiting for players (with retry logic for stale data)
-        let joined = false;
-        const quickMatchLobbies = lobbies.filter((lobby: { roomConfig?: string; roomId: string }) => {
-          try {
-            const config = JSON.parse(lobby.roomConfig || '{}');
-            return config.quickMatch === true;
-          } catch {
-            return false;
-          }
-        });
-
-        console.log(`📋 Found ${quickMatchLobbies.length} quick match lobbies`);
-
-        // Try to join existing lobbies (retry up to 3)
-        for (const lobby of quickMatchLobbies.slice(0, 3)) {
-          try {
-            console.log('🎯 Attempting to join lobby:', lobby.roomId);
-            const connectionUrl = await getHathoraConnectionInfo(lobby.roomId);
-            await connectSocket(connectionUrl);
-            
-            // Try to join - backend will reject if full
-            socketRef.current?.emit('room:join', { roomId: lobby.roomId, playerName });
-            joined = true;
-            break;
-          } catch (err) {
-            console.log('⏭️ Lobby unavailable, trying next...', err);
-            continue;
-          }
-        }
-
-        // 3. If no lobby available, create a new public one
-        if (!joined) {
-          console.log('🏠 No available lobbies, creating new quick match lobby...');
-          const lobby = await hathoraClient.lobbiesV3.createLobby(
-            { playerAuth: playerToken },
-            {
-              visibility: 'public',
-              region: 'Seattle',
-              roomConfig: JSON.stringify({ 
-                quickMatch: true,
-                createdBy: playerName,
-              }),
-            }
+        const waitingLobbies = lobbies
+          .filter((lobby: { roomConfig?: string; state?: string; roomId: string; createdAt: string }) => {
+            try {
+              // Must be a quick match lobby
+              if (!JSON.parse(lobby.roomConfig || '{}').quickMatch) return false;
+              
+              // Must have room for more players
+              const lobbyState = JSON.parse(lobby.state || '{}');
+              return lobbyState.playerCount < lobbyState.maxPlayers;
+            } catch { return false; }
+          })
+          // Sort by newest first (most likely to still be waiting)
+          .sort((a: { createdAt: string }, b: { createdAt: string }) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
 
-          const roomId = lobby.roomId;
-          console.log('🎮 Quick match lobby created:', roomId);
+        console.log(`📋 Found ${lobbies.length} lobbies, ${waitingLobbies.length} have space`);
 
-          // Wait for room to be ready
-          let connectionUrl: string | null = null;
-          for (let i = 0; i < 10; i++) {
-            try {
-              connectionUrl = await getHathoraConnectionInfo(roomId);
-              break;
-            } catch {
-              await new Promise(resolve => setTimeout(resolve, 1000));
+        // 2. Try to join up to 3 lobbies (one attempt each)
+        const MAX_JOIN_ATTEMPTS = 3;
+        const lobbiesToTry = waitingLobbies.slice(0, MAX_JOIN_ATTEMPTS);
+        
+        for (let i = 0; i < lobbiesToTry.length; i++) {
+          const lobby = lobbiesToTry[i];
+          const lobbyAge = Math.round((Date.now() - new Date(lobby.createdAt).getTime()) / 1000);
+          
+          try {
+            console.log(`🎯 Attempt ${i + 1}/${lobbiesToTry.length}: Joining lobby ${lobby.roomId} (${lobbyAge}s old)`);
+            const connectionUrl = await getHathoraConnectionInfo(lobby.roomId);
+            await connectSocket(connectionUrl);
+
+            const joined = await new Promise<boolean>((resolve) => {
+              const timeout = setTimeout(() => resolve(false), 2000);
+              const cleanup = () => {
+                clearTimeout(timeout);
+                socketRef.current?.off('room:joined', onJoined);
+                socketRef.current?.off('room:error', onError);
+              };
+              const onJoined = () => { cleanup(); resolve(true); };
+              const onError = () => { cleanup(); resolve(false); };
+              socketRef.current?.once('room:joined', onJoined);
+              socketRef.current?.once('room:error', onError);
+              socketRef.current?.emit('room:join', { roomId: lobby.roomId, playerName });
+            });
+
+            if (joined) {
+              console.log('✅ Matched with waiting player!');
+              return; // Success!
             }
+            
+            console.log(`⏭️ Lobby ${i + 1} no longer available, trying next...`);
+          } catch (err) {
+            console.log(`⏭️ Lobby ${i + 1} connection failed, trying next...`, err);
           }
-
-          if (!connectionUrl) {
-            throw new Error('Failed to get connection info');
-          }
-
-          await connectSocket(connectionUrl);
-          socketRef.current?.emit('room:create', { playerName, roomId });
         }
+
+        // 3. No lobbies available OR all attempts failed → Create new lobby
+        console.log('🏠 Creating lobby, waiting for opponent...');
+        await createHathoraQuickMatchLobby(playerName);
+        
       } catch (err: any) {
         console.error('❌ Quick match failed:', err);
         setError(`Quick match failed: ${err?.message || 'Unknown error'}`);
@@ -507,7 +545,7 @@ export function useGameSocket(): UseGameSocketReturn {
         socketRef.current.emit('room:quick_match', { playerName });
       }
     }
-  }, [connectSocket, getHathoraConnectionInfo]);
+  }, [connectSocket, getHathoraConnectionInfo, createHathoraQuickMatchLobby]);
 
   const leaveRoom = useCallback(() => {
     if (socketRef.current) {

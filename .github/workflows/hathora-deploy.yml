@@ -22,24 +22,6 @@ jobs:
           chmod +x hathora
           sudo mv hathora /usr/local/bin/
 
-      - name: Stop all running processes
-        env:
-          HATHORA_TOKEN: ${{ secrets.HATHORA_TOKEN }}
-          HATHORA_APP_ID: ${{ secrets.HATHORA_APP_ID }}
-        run: |
-          echo "🛑 Stopping all running processes..."
-          # Get list of all running processes and stop them
-          PROCESSES=$(hathora process list --app-id $HATHORA_APP_ID --json 2>/dev/null | jq -r '.[].processId' || echo "")
-          if [ -n "$PROCESSES" ]; then
-            for PROCESS_ID in $PROCESSES; do
-              echo "   Stopping process: $PROCESS_ID"
-              hathora process stop --app-id $HATHORA_APP_ID --process-id $PROCESS_ID || true
-            done
-            echo "✅ All processes stopped"
-          else
-            echo "ℹ️ No running processes found"
-          fi
-
       - name: Deploy to Hathora
         working-directory: backend
         env:

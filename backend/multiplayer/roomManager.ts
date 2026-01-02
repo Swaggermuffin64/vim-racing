@@ -10,6 +10,7 @@ import type {
 import { generateDeleteTasks, generatePositionTasks } from '../tasks.js';
 import type { Task } from '../types.js';
 import { IS_HATHORA } from '../config.js';
+import { updateLobbyState } from './hathoraLobby.js';
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -94,6 +95,15 @@ export class RoomManager {
 
     console.log(`🏠 Room ${roomId} created by ${playerName} (${isPublic ? 'public' : 'private'})`);
     
+    // Update Hathora lobby state for matchmaking
+    if (isPublic) {
+      updateLobbyState(roomId, {
+        status: 'waiting',
+        playerCount: 1,
+        maxPlayers: 2,
+      });
+    }
+    
     return room;
   }
     
@@ -140,6 +150,16 @@ export class RoomManager {
 
     // Notify other players (not the player who joined)
     socket.to(roomId).emit('room:player_joined', { player });
+    
+    // Update Hathora lobby state - room is now full if 2 players
+    if (room.isPublic) {
+      updateLobbyState(roomId, {
+        status: room.players.size >= 2 ? 'racing' : 'waiting',
+        playerCount: room.players.size,
+        maxPlayers: 2,
+      });
+    }
+    
     return room;
   }
 
@@ -210,6 +230,15 @@ export class RoomManager {
     room.countdownStart = Date.now();
 
     console.log(`⏱️ Starting countdown for room ${roomId}`);
+    
+    // Update Hathora lobby state
+    if (room.isPublic) {
+      updateLobbyState(roomId, {
+        status: 'countdown',
+        playerCount: room.players.size,
+        maxPlayers: 2,
+      });
+    }
 
     // Countdown: 3, 2, 1, GO!
     let seconds = 3;
