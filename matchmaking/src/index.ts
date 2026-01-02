@@ -42,10 +42,10 @@ wss.on('connection', (socket) => {
     }
   });
 
-  socket.on('close', () => {
+  socket.on('close', async () => {
     const playerId = socketToPlayer.get(socket);
     if (playerId) {
-      matchmaker.removePlayer(playerId);
+      await matchmaker.removePlayer(playerId);
       socketToPlayer.delete(socket);
     }
     console.log(`🔌 Connection closed: ${connectionId}`);
@@ -56,13 +56,13 @@ wss.on('connection', (socket) => {
   });
 });
 
-function handleMessage(socket: WebSocket, connectionId: string, message: ClientMessage) {
+async function handleMessage(socket: WebSocket, connectionId: string, message: ClientMessage) {
   switch (message.type) {
     case 'queue:join': {
       // Remove from queue if already queued (rejoin)
       const existingPlayerId = socketToPlayer.get(socket);
       if (existingPlayerId) {
-        matchmaker.removePlayer(existingPlayerId);
+        await matchmaker.removePlayer(existingPlayerId);
       }
 
       const playerId = randomUUID();
@@ -75,7 +75,7 @@ function handleMessage(socket: WebSocket, connectionId: string, message: ClientM
       };
 
       socketToPlayer.set(socket, playerId);
-      const position = matchmaker.addPlayer(player);
+      const position = await matchmaker.addPlayer(player);
       
       send(socket, { type: 'queue:joined', position, playerId });
       break;
@@ -84,7 +84,7 @@ function handleMessage(socket: WebSocket, connectionId: string, message: ClientM
     case 'queue:leave': {
       const playerId = socketToPlayer.get(socket);
       if (playerId) {
-        matchmaker.removePlayer(playerId);
+        await matchmaker.removePlayer(playerId);
         socketToPlayer.delete(socket);
         send(socket, { type: 'queue:left' });
       }
