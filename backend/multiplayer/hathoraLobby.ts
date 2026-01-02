@@ -37,11 +37,20 @@ const getHathoraClient = async () => {
  * This is called whenever the game state changes.
  */
 export async function updateLobbyState(roomId: string, state: LobbyState): Promise<void> {
-  if (!IS_HATHORA) return;
+  console.log(`🔍 updateLobbyState called: roomId=${roomId}, IS_HATHORA=${IS_HATHORA}`);
+  
+  if (!IS_HATHORA) {
+    console.log(`⏭️ Skipping lobby state update (not in Hathora environment)`);
+    return;
+  }
   
   try {
+    console.log(`🔑 Getting Hathora client... APP_ID=${process.env.HATHORA_APP_ID ? 'set' : 'NOT SET'}, DEV_TOKEN=${process.env.HATHORA_DEV_TOKEN ? 'set' : 'NOT SET'}`);
     const client = await getHathoraClient();
-    if (!client) return;
+    if (!client) {
+      console.log(`⏭️ No Hathora client available`);
+      return;
+    }
     
     console.log(`📡 Updating Hathora lobby state for ${roomId}:`, state);
     
@@ -52,7 +61,7 @@ export async function updateLobbyState(roomId: string, state: LobbyState): Promi
     console.log(`✅ Lobby state updated for ${roomId}`);
   } catch (err: any) {
     // Don't fail the game if lobby state update fails
-    console.error(`⚠️ Failed to update lobby state for ${roomId}:`, err?.message);
+    console.error(`⚠️ Failed to update lobby state for ${roomId}:`, err?.message, err?.stack);
   }
 }
 

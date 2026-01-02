@@ -93,6 +93,7 @@ io.on('connection', (socket) => {
 
   // Create a new room
   socket.on('room:create', ({ playerName, roomId: externalRoomId, isPublic }) => {
+    console.log(`📥 room:create received: playerName=${playerName}, roomId=${externalRoomId}, isPublic=${isPublic}`);
     const room = roomManager.createRoom(socket, playerName, externalRoomId, isPublic);
     const player = room.players.get(socket.id)!;
     socket.emit('room:created', { 

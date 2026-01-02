@@ -50,6 +50,7 @@ export class RoomManager {
   }
 
   createRoom(socket: GameSocket, playerName: string, externalRoomId?: string, isPublic: boolean = false): GameRoom {
+    console.log(`📥 createRoom called: playerName=${playerName}, externalRoomId=${externalRoomId}, isPublic=${isPublic} (type: ${typeof isPublic})`);
     const roomId = externalRoomId || this.generateRoomId();
     const playerId = socket.id;
     
