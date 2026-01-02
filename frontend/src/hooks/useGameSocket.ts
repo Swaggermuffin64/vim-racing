@@ -453,7 +453,7 @@ export function useGameSocket(): UseGameSocketReturn {
     }
 
     await connectSocket(connectionUrl);
-    socketRef.current?.emit('room:create', { playerName, roomId });
+    socketRef.current?.emit('room:create', { playerName, roomId, isPublic: true });
   }, [connectSocket, getHathoraConnectionInfo]);
 
   const quickMatch = useCallback(async (playerName: string) => {
