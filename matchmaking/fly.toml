@@ -1,0 +1,23 @@
+app = "vim-racing-matchmaker"
+primary_region = "sjc"  # San Jose - close to Seattle Hathora region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  PLAYERS_PER_MATCH = "2"
+  HATHORA_REGION = "Seattle"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Keep running for matchmaking queue
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+

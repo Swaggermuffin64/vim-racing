@@ -54,7 +54,8 @@ export async function updateLobbyState(roomId: string, state: LobbyState): Promi
     
     console.log(`📡 Updating Hathora lobby state for ${roomId}:`, state);
     
-    await client.lobbiesV3.setLobbyState(roomId, {
+    // Note: setLobbyState is only available in V2 (deprecated but still works)
+    await client.lobbiesV2.setLobbyState(roomId, {
       state: JSON.stringify(state),
     });
     
