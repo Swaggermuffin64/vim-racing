@@ -249,9 +249,11 @@ const MultiplayerGame: React.FC = () => {
     isConnecting,
     gameState,
     error,
+    queuePosition,
     createRoom,
     joinRoom,
     quickMatch,
+    cancelQuickMatch,
     leaveRoom,
     readyToPlay,
     sendCursorMove,
@@ -489,9 +491,11 @@ const MultiplayerGame: React.FC = () => {
           useHathora={import.meta.env.VITE_USE_HATHORA === 'true'}
           initialMode={initialMode}
           error={error}
+          queuePosition={queuePosition}
           onCreateRoom={createRoom}
           onJoinRoom={joinRoom}
           onQuickMatch={quickMatch}
+          onCancelQuickMatch={cancelQuickMatch}
         />
       </div>
     );

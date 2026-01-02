@@ -6,9 +6,11 @@ interface LobbyProps {
   useHathora?: boolean; // In Hathora mode, connection happens on room create/join
   initialMode?: 'quick' | 'private' | null; // Pre-select a mode from URL params
   error: string | null;
+  queuePosition?: number | null; // Position in matchmaking queue
   onCreateRoom: (playerName: string) => void;
   onJoinRoom: (roomId: string, playerName: string) => void;
   onQuickMatch: (playerName: string) => void;
+  onCancelQuickMatch?: () => void;
 }
 
 const colors = {
@@ -179,9 +181,11 @@ export const Lobby: React.FC<LobbyProps> = ({
   useHathora = false,
   initialMode = null,
   error,
+  queuePosition = null,
   onCreateRoom,
   onJoinRoom,
   onQuickMatch,
+  onCancelQuickMatch,
 }) => {
   const [playerName, setPlayerName] = useState('');
   const [roomCode, setRoomCode] = useState('');
@@ -245,6 +249,8 @@ export const Lobby: React.FC<LobbyProps> = ({
 
   // Quick Play flow
   if (initialMode === 'quick') {
+    const isInQueue = queuePosition !== null;
+    
     return (
       <div style={styles.container}>
         <div style={styles.header}>
@@ -267,34 +273,82 @@ export const Lobby: React.FC<LobbyProps> = ({
 
         {error && <div style={styles.error}>{error}</div>}
 
-        <div style={styles.card}>
-          <div style={styles.cardTitle}>Your Name</div>
-          <input
-            type="text"
-            placeholder="Enter your name..."
-            value={playerName}
-            onChange={(e) => setPlayerName(e.target.value)}
-            style={styles.input}
-            maxLength={20}
-          />
-        </div>
+        {/* Show queue status when in queue */}
+        {isInQueue ? (
+          <div style={styles.card}>
+            <div style={styles.cardTitle}>Finding Match</div>
+            <div style={{
+              textAlign: 'center' as const,
+              padding: '20px 0',
+            }}>
+              <div style={{
+                fontSize: '48px',
+                fontWeight: 700,
+                color: colors.accent,
+                marginBottom: '8px',
+                fontFamily: '"JetBrains Mono", monospace',
+              }}>
+                #{queuePosition}
+              </div>
+              <div style={{
+                fontSize: '14px',
+                color: colors.textSecondary,
+              }}>
+                in queue
+              </div>
+              <div style={{
+                marginTop: '16px',
+                fontSize: '13px',
+                color: colors.textMuted,
+              }}>
+                Waiting for opponent...
+              </div>
+            </div>
+            {onCancelQuickMatch && (
+              <button
+                style={{
+                  ...styles.button,
+                  ...styles.buttonOutline,
+                  marginTop: '16px',
+                }}
+                onClick={onCancelQuickMatch}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <div style={styles.card}>
+              <div style={styles.cardTitle}>Your Name</div>
+              <input
+                type="text"
+                placeholder="Enter your name..."
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                style={styles.input}
+                maxLength={20}
+              />
+            </div>
 
-        <button
-          style={{
-            ...styles.button,
-            background: `linear-gradient(135deg, ${colors.success} 0%, #059669 100%)`,
-            ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
-          }}
-          onClick={handleQuickMatch}
-          disabled={!canInteract || !playerName.trim() || isLoading}
-        >
-          {isLoading ? 'Finding match...' : 'Find Match'}
-        </button>
+            <button
+              style={{
+                ...styles.button,
+                background: `linear-gradient(135deg, ${colors.success} 0%, #059669 100%)`,
+                ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
+              }}
+              onClick={handleQuickMatch}
+              disabled={!canInteract || !playerName.trim() || isLoading}
+            >
+              {isLoading ? 'Connecting...' : 'Find Match'}
+            </button>
+          </>
+        )}
 
         <button
           style={styles.backButton}
-          onClick={handleBack}
-          disabled={isLoading}
+          onClick={isInQueue && onCancelQuickMatch ? onCancelQuickMatch : handleBack}
+          disabled={false}
         >
           ← Back
         </button>
