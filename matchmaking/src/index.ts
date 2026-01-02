@@ -1,12 +1,13 @@
 import 'dotenv/config';
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
+import { Region } from '@hathora/cloud-sdk-typescript/models/components';
 import { Matchmaker } from './matchmaker.js';
 import type { ClientMessage, ServerMessage, QueuedPlayer } from './types.js';
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
 const PLAYERS_PER_MATCH = parseInt(process.env.PLAYERS_PER_MATCH || '2', 10);
-const REGION = process.env.HATHORA_REGION || 'Seattle';
+const REGION = (process.env.HATHORA_REGION as Region) || Region.Seattle;
 
 // Validate required env vars
 if (!process.env.HATHORA_APP_ID || !process.env.HATHORA_TOKEN) {
@@ -26,9 +27,6 @@ const matchmaker = new Matchmaker({
 
 const wss = new WebSocketServer({ port: PORT });
 
-// Track socket -> playerId mapping for cleanup
-const socketToPlayer = new Map<WebSocket, string>();
-
 wss.on('connection', (socket) => {
   const connectionId = randomUUID().slice(0, 8);
   console.log(`🔌 New connection: ${connectionId}`);
@@ -43,11 +41,7 @@ wss.on('connection', (socket) => {
   });
 
   socket.on('close', async () => {
-    const playerId = socketToPlayer.get(socket);
-    if (playerId) {
-      await matchmaker.removePlayer(playerId);
-      socketToPlayer.delete(socket);
-    }
+    await matchmaker.removePlayerBySocket(socket);
     console.log(`🔌 Connection closed: ${connectionId}`);
   });
 
@@ -60,10 +54,7 @@ async function handleMessage(socket: WebSocket, connectionId: string, message: C
   switch (message.type) {
     case 'queue:join': {
       // Remove from queue if already queued (rejoin)
-      const existingPlayerId = socketToPlayer.get(socket);
-      if (existingPlayerId) {
-        await matchmaker.removePlayer(existingPlayerId);
-      }
+      await matchmaker.removePlayerBySocket(socket);
 
       const playerId = randomUUID();
       const player: QueuedPlayer = {
@@ -74,7 +65,6 @@ async function handleMessage(socket: WebSocket, connectionId: string, message: C
         region: message.region,
       };
 
-      socketToPlayer.set(socket, playerId);
       const position = await matchmaker.addPlayer(player);
       
       send(socket, { type: 'queue:joined', position, playerId });
@@ -82,10 +72,8 @@ async function handleMessage(socket: WebSocket, connectionId: string, message: C
     }
 
     case 'queue:leave': {
-      const playerId = socketToPlayer.get(socket);
-      if (playerId) {
-        await matchmaker.removePlayer(playerId);
-        socketToPlayer.delete(socket);
+      const removed = await matchmaker.removePlayerBySocket(socket);
+      if (removed) {
         send(socket, { type: 'queue:left' });
       }
       break;

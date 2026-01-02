@@ -1,75 +1,61 @@
 import type { WebSocket } from 'ws';
 import { Mutex } from 'async-mutex';
+import { HathoraCloud } from '@hathora/cloud-sdk-typescript';
+import { Region } from '@hathora/cloud-sdk-typescript/models/components';
 import type { QueuedPlayer, ServerMessage, MatchResult } from './types.js';
 
-// Hathora client (lazy loaded)
-let hathoraClientPromise: Promise<any> | null = null;
-
-const getHathoraClient = async () => {
+function createHathoraClient() {
   const appId = process.env.HATHORA_APP_ID;
   const devToken = process.env.HATHORA_TOKEN;
 
   if (!appId || !devToken) {
-    throw new Error('2 HATHORA_APP_ID and HATHORA_TOKEN must be set');
+    throw new Error('HATHORA_APP_ID and HATHORA_TOKEN must be set');
   }
 
-  if (!hathoraClientPromise) {
-    hathoraClientPromise = import('@hathora/cloud-sdk-typescript').then(
-      (module) =>
-        new module.HathoraCloud({
-          appId,
-          hathoraDevToken: devToken,
-        })
-    );
-  }
-  return hathoraClientPromise;
-};
+  return new HathoraCloud({ appId, hathoraDevToken: devToken });
+}
 
 export class Matchmaker {
   private queue: Map<string, QueuedPlayer> = new Map();
   private mutex = new Mutex();
-  private matchInterval: NodeJS.Timeout | null = null;
+  private readonly hathoraClient: HathoraCloud;
   private readonly playersPerMatch: number;
-  private readonly matchCheckIntervalMs: number;
-  private readonly region: string;
+  private readonly region: Region;
 
   constructor(options?: {
     playersPerMatch?: number;
-    matchCheckIntervalMs?: number;
-    region?: string;
+    region?: Region;
   }) {
+    this.hathoraClient = createHathoraClient();
     this.playersPerMatch = options?.playersPerMatch ?? 2;
-    this.matchCheckIntervalMs = options?.matchCheckIntervalMs ?? 500;
-    this.region = options?.region ?? 'Seattle';
+    this.region = options?.region ?? Region.Seattle;
   }
 
   start() {
     console.log('🎮 Matchmaker started');
     console.log(`   Players per match: ${this.playersPerMatch}`);
-    console.log(`   Check interval: ${this.matchCheckIntervalMs}ms`);
     console.log(`   Region: ${this.region}`);
-
-    this.matchInterval = setInterval(() => {
-      this.tryMatch();
-    }, this.matchCheckIntervalMs);
   }
 
   stop() {
-    if (this.matchInterval) {
-      clearInterval(this.matchInterval);
-      this.matchInterval = null;
-    }
     console.log('🛑 Matchmaker stopped');
   }
 
   async addPlayer(player: QueuedPlayer): Promise<number> {
-    return this.mutex.runExclusive(() => {
+    const { position, shouldTryMatch } = await this.mutex.runExclusive(() => {
       this.queue.set(player.id, player);
       const position = this.getQueuePosition(player.id);
       console.log(`➕ Player "${player.name}" (${player.id}) joined queue at position ${position}`);
       this.broadcastQueuePositions();
-      return position;
+      return { position, shouldTryMatch: this.queue.size >= this.playersPerMatch };
     });
+
+    // Trigger match check after mutex is released (fire-and-forget)
+    if (shouldTryMatch) {
+      this.tryMatch();
+    }
+
+    return position;
   }
 
   async removePlayer(playerId: string): Promise<boolean> {
@@ -80,6 +66,20 @@ export class Matchmaker {
         console.log(`➖ Player "${player.name}" (${playerId}) left queue`);
         this.broadcastQueuePositions();
         return true;
+      }
+      return false;
+    });
+  }
+
+  async removePlayerBySocket(socket: WebSocket): Promise<boolean> {
+    return this.mutex.runExclusive(() => {
+      for (const [id, player] of this.queue) {
+        if (player.socket === socket) {
+          this.queue.delete(id);
+          console.log(`➖ Player "${player.name}" (${id}) left queue`);
+          this.broadcastQueuePositions();
+          return true;
+        }
       }
       return false;
     });
@@ -103,9 +103,10 @@ export class Matchmaker {
   }
 
   private async tryMatch() {
-    await this.mutex.runExclusive(async () => {
+    // Short lock: check queue and remove players
+    const players = await this.mutex.runExclusive(() => {
       if (this.queue.size < this.playersPerMatch) {
-        return;
+        return null;
       }
 
       // Get the first N players from the queue (FIFO)
@@ -116,26 +117,35 @@ export class Matchmaker {
         this.queue.delete(player.id);
       }
 
-      console.log(`🎯 Matching ${players.length} players:`, players.map((p) => p.name).join(', '));
+      return players;
+    });
 
-      try {
-        const result = await this.createHathoraRoom(players);
-        
-        // Notify all matched players
-        for (const player of players) {
-          this.send(player.socket, {
-            type: 'match:found',
-            roomId: result.roomId,
-            connectionUrl: result.connectionUrl,
-            players: result.players,
-          });
-        }
+    if (!players) {
+      return;
+    }
 
-        console.log(`✅ Match created: ${result.roomId}`);
-      } catch (err: any) {
-        console.error('❌ Failed to create match:', err?.message);
-        
-        // Put players back in queue on failure
+    console.log(`🎯 Matching ${players.length} players:`, players.map((p) => p.name).join(', '));
+
+    // No lock: create room (this can take several seconds)
+    try {
+      const result = await this.createHathoraRoom(players);
+
+      // Notify all matched players
+      for (const player of players) {
+        this.send(player.socket, {
+          type: 'match:found',
+          roomId: result.roomId,
+          connectionUrl: result.connectionUrl,
+          players: result.players,
+        });
+      }
+
+      console.log(`✅ Match created: ${result.roomId}`);
+    } catch (err: any) {
+      console.error('❌ Failed to create match:', err?.message);
+
+      // Short lock: put players back in queue on failure
+      await this.mutex.runExclusive(() => {
         for (const player of players) {
           this.queue.set(player.id, player);
           this.send(player.socket, {
@@ -144,15 +154,13 @@ export class Matchmaker {
           });
         }
         this.broadcastQueuePositions();
-      }
-    });
+      });
+    }
   }
 
   private async createHathoraRoom(players: QueuedPlayer[]): Promise<MatchResult> {
-    const client = await getHathoraClient();
-
     // Create room using Rooms API (requires dev token)
-    const room = await client.roomsV2.createRoom({
+    const room = await this.hathoraClient.roomsV2.createRoom({
       region: this.region,
       roomConfig: JSON.stringify({
         quickMatch: true,
@@ -167,7 +175,7 @@ export class Matchmaker {
     let connectionUrl: string | null = null;
     for (let i = 0; i < 15; i++) {
       try {
-        const connectionInfo = await client.roomsV2.getConnectionInfo(roomId);
+        const connectionInfo = await this.hathoraClient.roomsV2.getConnectionInfo(roomId);
         if (connectionInfo.status === 'active' && connectionInfo.exposedPort) {
           const { host, port } = connectionInfo.exposedPort;
           connectionUrl = `https://${host}:${port}`;
@@ -176,7 +184,7 @@ export class Matchmaker {
       } catch {
         // Room not ready yet
       }
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
     }
 
     if (!connectionUrl) {
