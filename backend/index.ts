@@ -114,6 +114,34 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Join a matched room (from matchmaking) - creates room if first player, joins if second
+  socket.on('room:join_matched', ({ roomId, playerName }) => {
+    console.log(`📥 room:join_matched: roomId=${roomId}, playerName=${playerName}`);
+    
+    // Check if room already exists (another matched player got here first)
+    const existingRoom = roomManager.getRoom(roomId);
+    
+    if (existingRoom) {
+      // Room exists, join it
+      const room = roomManager.joinRoom(socket, roomId, playerName);
+      if (room) {
+        socket.emit('room:joined', {
+          roomId: room.id,
+          players: roomManager.getPlayersArray(room),
+        });
+      }
+    } else {
+      // First player to arrive - create the room with the matched roomId
+      // This is a public quick-match room
+      const room = roomManager.createRoom(socket, playerName, roomId, true);
+      const player = room.players.get(socket.id)!;
+      socket.emit('room:created', { 
+        roomId: room.id, 
+        player,
+      });
+    }
+  });
+
   // Quick match - find or create a room automatically
   socket.on('room:quick_match', ({ playerName }) => {
     const { room, isNewRoom } = roomManager.findOrCreateQuickMatchRoom(socket, playerName);

@@ -400,7 +400,8 @@ export function useGameSocket(): UseGameSocketReturn {
   const connectToMatchedRoom = useCallback(async (connectionUrl: string, roomId: string, playerName: string) => {
     console.log(`🎮 Connecting to matched room: ${roomId}`);
     await connectSocket(connectionUrl);
-    socketRef.current?.emit('room:join', { roomId, playerName });
+    // Use room:join_matched which creates the room if first player, or joins if second
+    socketRef.current?.emit('room:join_matched', { roomId, playerName });
   }, [connectSocket]);
 
   const quickMatch = useCallback(async (playerName: string) => {
