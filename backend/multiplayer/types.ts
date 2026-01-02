@@ -24,7 +24,7 @@ export interface GameRoom {
 
 // Client → Server Events
 export interface ClientToServerEvents {
-  'room:create': (data: { playerName: string; roomId?: string}) => void;
+  'room:create': (data: { playerName: string; roomId?: string; isPublic?: boolean }) => void;
   'room:join': (data: { roomId: string; playerName: string }) => void;
   'room:quick_match': (data: { playerName: string }) => void;
   'room:leave': () => void;
