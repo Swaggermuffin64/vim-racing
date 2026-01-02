@@ -490,8 +490,15 @@ export function useGameSocket(): UseGameSocketReturn {
             new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
 
-        console.log(`📋 Found ${lobbies.length} lobbies, ${waitingLobbies.length} have space`);
-
+        console.log(`📋 Found ${lobbies.length} total lobbies:`);
+        lobbies.forEach((lobby: { roomId: string; roomConfig?: string; state?: string; createdAt: string }) => {
+          const config = JSON.parse(lobby.roomConfig || '{}');
+          const state = JSON.parse(lobby.state || '{}');
+          const age = Math.round((Date.now() - new Date(lobby.createdAt).getTime()) / 1000);
+          console.log(`   - ${lobby.roomId}: quickMatch=${config.quickMatch}, players=${state.playerCount}/${state.maxPlayers}, age=${age}s`);
+        });
+        console.log(`✅ ${waitingLobbies.length} lobbies have space:`, waitingLobbies.map((l: { roomId: string }) => l.roomId));
+        console.log()
         // 2. Try to join up to 3 lobbies (one attempt each)
         const MAX_JOIN_ATTEMPTS = 3;
         const lobbiesToTry = waitingLobbies.slice(0, MAX_JOIN_ATTEMPTS);
