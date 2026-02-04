@@ -61,9 +61,9 @@ async function handleMessage(socket: WebSocket, connectionId: string, message: C
         queuedAt: Date.now(),
       };
 
-      const position = await matchmaker.addPlayer(player);
+      await matchmaker.addPlayer(player);
       
-      send(socket, { type: 'queue:joined', position, playerId });
+      send(socket, { type: 'queue:joined', playerId });
       break;
     }
 

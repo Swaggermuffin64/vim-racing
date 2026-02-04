@@ -21,8 +21,7 @@ export type ClientMessage =
 
 // Messages from server to client
 export type ServerMessage =
-  | { type: 'queue:joined'; position: number; playerId: string }
-  | { type: 'queue:position'; position: number }
+  | { type: 'queue:joined'; playerId: string }
   | { type: 'queue:left' }
   | { type: 'match:found'; roomId: string; connectionUrl: string; players: Array<{ id: string; name: string }> }
   | { type: 'error'; message: string }

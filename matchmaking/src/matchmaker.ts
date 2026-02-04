@@ -34,21 +34,16 @@ export class Matchmaker {
     console.log('🛑 Matchmaker stopped');
   }
 
-  async addPlayer(player: QueuedPlayer): Promise<number> {
-    const { position, shouldTryMatch } = await this.mutex.runExclusive(() => {
+  async addPlayer(player: QueuedPlayer): Promise<void> {
+    const shouldTryMatch = await this.mutex.runExclusive(() => {
       this.queue.set(player.id, player);
-      const position = this.getQueuePosition(player.id);
-      console.log(`➕ Player "${player.name}" (${player.id}) joined queue at position ${position}`);
-      this.broadcastQueuePositions();
-      return { position, shouldTryMatch: this.queue.size >= this.playersPerMatch };
+      console.log(`Player "${player.name}" (${player.id}) joined queue`);
+      return this.queue.size >= this.playersPerMatch;
     });
 
-    // Trigger match check after mutex is released (fire-and-forget)
     if (shouldTryMatch) {
       this.tryMatch();
     }
-
-    return position;
   }
 
   async removePlayer(playerId: string): Promise<boolean> {
@@ -56,8 +51,7 @@ export class Matchmaker {
       const player = this.queue.get(playerId);
       if (player) {
         this.queue.delete(playerId);
-        console.log(`➖ Player "${player.name}" (${playerId}) left queue`);
-        this.broadcastQueuePositions();
+        console.log(`Player "${player.name}" (${playerId}) left queue`);
         return true;
       }
       return false;
@@ -69,8 +63,7 @@ export class Matchmaker {
       for (const [id, player] of this.queue) {
         if (player.socket === socket) {
           this.queue.delete(id);
-          console.log(`➖ Player "${player.name}" (${id}) left queue`);
-          this.broadcastQueuePositions();
+          console.log(`Player "${player.name}" (${id}) left queue`);
           return true;
         }
       }
@@ -78,75 +71,119 @@ export class Matchmaker {
     });
   }
 
-  getQueuePosition(playerId: string): number {
-    const players = Array.from(this.queue.keys());
-    return players.indexOf(playerId) + 1;
-  }
-
   getQueueSize(): number {
     return this.queue.size;
   }
 
-  private broadcastQueuePositions() {
-    let position = 1;
-    for (const [, player] of this.queue) {
-      this.send(player.socket, { type: 'queue:position', position });
-      position++;
+  groupPlayers(): { roomGroups: QueuedPlayer[][], groupedPlayers: QueuedPlayer[] } {
+    const roomGroups: QueuedPlayer[][] = [];
+    let currentGroup: QueuedPlayer[] = [];
+    const playerArray = Array.from(this.queue.values());
+    for (let i = 0; i < this.queue.size; i++) {
+      const currPlayer = playerArray[i];
+      currentGroup.push(currPlayer);
+      // push to roomGroups when max Players hit
+      if (currentGroup.length === this.playersPerMatch) {
+        roomGroups.push(currentGroup);
+        currentGroup = [];
+      }
     }
-  }
 
+    console.log(playerArray);
+    console.log(roomGroups);
+    // don't include room with one player as a group
+    if (currentGroup.length === 1) {
+      return {
+        roomGroups,
+        groupedPlayers: playerArray.slice(0,-1)
+      };
+    }
+
+    roomGroups.push(currentGroup);
+    return {
+      roomGroups,
+      groupedPlayers: playerArray
+    };
+  }
+  
+  
+
+  
   private async tryMatch() {
-    // Short lock: check queue and remove players
-    const players = await this.mutex.runExclusive(() => {
+    // Short lock: Get room groups, matched players, and remove them from queue
+    const result = await this.mutex.runExclusive(() => {
       if (this.queue.size < this.playersPerMatch) {
         return null;
       }
 
-      // Get the first N players from the queue (FIFO)
-      const players = Array.from(this.queue.values()).slice(0, this.playersPerMatch);
+      const { roomGroups, groupedPlayers } = this.groupPlayers();
 
       // Remove them from queue immediately to prevent double-matching
-      for (const player of players) {
+      for (const player of groupedPlayers) {
         this.queue.delete(player.id);
       }
 
-      return players;
+      return { roomGroups, groupedPlayers };
     });
 
-    if (!players) {
+    if (!result) {
+      console.log("Failed to group players")
       return;
     }
 
-    console.log(`🎯 Matching ${players.length} players:`, players.map((p) => p.name).join(', '));
+    const { roomGroups, groupedPlayers } = result;
+    if (!groupedPlayers) {
+      return;
+    }
+    console.log(`🎯 Matching ${groupedPlayers.length} players:`, groupedPlayers.map((p) => p.name).join(', '));
+    // No lock: create rooms in parallel (this can take several seconds)
 
-    // No lock: create room (this can take several seconds)
     try {
-      const result = await this.createHathoraRoom(players);
+      // Create Hathora rooms for all groups in parallel
+      const matchResults = await Promise.allSettled(
+        roomGroups.map((roomGroup) => this.createHathoraRoom(roomGroup))
+      );
 
-      // Notify all matched players
-      for (const player of players) {
-        this.send(player.socket, {
-          type: 'match:found',
-          roomId: result.roomId,
-          connectionUrl: result.connectionUrl,
-          players: result.players,
-        });
+      // Notify all matched players in each group
+      for (let i = 0; i < roomGroups.length; i++) {
+        const roomGroup = roomGroups[i];
+        const matchResult = matchResults[i];
+
+        //if successful Hathora room creation, notify players
+        if (matchResult.status === "fulfilled") {
+          console.log(`✅ Match created: ${matchResult.value.roomId}`);
+
+          for (const player of roomGroup) {
+            this.send(player.socket, {
+              type: 'match:found',
+              roomId: matchResult.value.roomId,
+              connectionUrl: matchResult.value.connectionUrl,
+              players: matchResult.value.players,
+            });
+          }
+
+        }
+        // otherwise requeue
+        else {
+          for (const player of roomGroup){
+            if (player.socket.readyState !== player.socket.OPEN) continue;
+            this.queue.set(player.id, player);
+            this.send(player.socket, {type: 'error', message: 'Failed to create match'})
+          }
+        }
       }
-
-      console.log(`✅ Match created: ${result.roomId}`);
     } catch (err: any) {
       console.error('❌ Failed to create match:', err?.message);
 
       // Short lock: put players back in queue on failure
       await this.mutex.runExclusive(() => {
-        for (const player of players) {
+        for (const player of groupedPlayers) {
           this.queue.set(player.id, player);
           this.send(player.socket, {
             type: 'error',
             message: 'Failed to create match, you have been re-queued',
           });
         }
-        this.broadcastQueuePositions();
       });
     }
   }
