@@ -38,6 +38,7 @@ export class Matchmaker {
     const shouldTryMatch = await this.mutex.runExclusive(() => {
       this.queue.set(player.id, player);
       console.log(`Player "${player.name}" (${player.id}) joined queue`);
+      console.log(this.queue);
       return this.queue.size >= this.playersPerMatch;
     });
 

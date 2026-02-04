@@ -150,3 +150,83 @@ docker run -p 3002:3002 \
   vim-racing-matchmaking
 ```
 
+## Load Testing
+
+A load test script is included to simulate multiple players joining the matchmaking queue.
+
+### Run Against Local Server
+
+```bash
+# Start the matchmaking server first
+npm run dev
+
+# In another terminal, run the load test
+npm run load-test:local
+```
+
+### Run Against Live Server
+
+```bash
+# Set your production URL and run
+MATCHMAKING_URL=wss://your-matchmaker.example.com npm run load-test:live
+```
+
+### Configuration Options
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `MATCHMAKING_URL` | `ws://localhost:3002` | WebSocket URL of matchmaking server |
+| `NUM_PLAYERS` | `10` | Number of simulated players |
+| `STAGGER_MS` | `500` | Delay between each player joining (ms) |
+| `TIMEOUT_MS` | `60000` | Max time to wait for a match (ms) |
+
+### Examples
+
+```bash
+# 20 players with 200ms between joins
+NUM_PLAYERS=20 STAGGER_MS=200 npm run load-test:local
+
+# Stress test: 50 players, rapid fire
+NUM_PLAYERS=50 STAGGER_MS=100 MATCHMAKING_URL=wss://your-matchmaker.example.com npm run load-test
+
+# Quick sanity check: 4 players
+NUM_PLAYERS=4 STAGGER_MS=1000 npm run load-test:local
+```
+
+### Expected Output
+
+```
+🚀 Starting Matchmaking Load Test
+   Target: ws://localhost:3002
+   Players: 10
+   Stagger: 500ms between players
+
+[LoadTest_1_...] 🔌 Connected
+[LoadTest_1_...] 📋 Queued (playerId: abc123)
+[LoadTest_2_...] 🔌 Connected
+[LoadTest_2_...] 📋 Queued (playerId: def456)
+[LoadTest_1_...] ✅ Matched! Room: room-xyz (1523ms)
+[LoadTest_2_...] ✅ Matched! Room: room-xyz (1489ms)
+...
+
+==================================================
+📊 LOAD TEST RESULTS
+==================================================
+   Target: ws://localhost:3002
+   Players: 10
+   Duration: 35.2s
+--------------------------------------------------
+   Connected: 10/10
+   Queued: 10/10
+   Matched: 10/10
+   Errors: 0
+--------------------------------------------------
+   Match Times:
+     Min: 1234ms
+     Avg: 2456ms
+     P50: 2100ms
+     P95: 4500ms
+     Max: 5200ms
+==================================================
+```
+

@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "load-test": "tsx scripts/load-test.ts",
+    "load-test:local": "MATCHMAKING_URL=ws://localhost:3002 NUM_PLAYERS=10 tsx scripts/load-test.ts",
+    "load-test:live": "NUM_PLAYERS=10 tsx scripts/load-test.ts"
   },
   "dependencies": {
     "@hathora/cloud-sdk-typescript": "^2.6.0",

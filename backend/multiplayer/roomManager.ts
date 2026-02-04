@@ -31,12 +31,64 @@ export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
   private roomCleanupTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> cleanup timer
+  private waitingRoomTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> waiting timeout
   private io: GameServer;
   private NUM_TASKS: number = 5;
   private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
+  private WAITING_ROOM_TIMEOUT_MS_PRIVATE = 5 * 60 * 1000; // 5 minutes for private rooms (friends coordinating)
+  private WAITING_ROOM_TIMEOUT_MS_PUBLIC = 30 * 1000; // 30 seconds for public rooms (auto-ready should fire in ~2s)
+  private STARTUP_IDLE_TIMEOUT_MS = 30 * 1000; // 30 seconds to wait for first connection in Hathora
+  private startupTimer: NodeJS.Timeout | null = null;
   
   constructor(io: GameServer) {
     this.io = io;
+    
+    // In Hathora environment, exit if no one connects within timeout
+    if (IS_HATHORA) {
+      console.log(`⏱️ Hathora startup timeout: ${this.STARTUP_IDLE_TIMEOUT_MS / 1000}s to receive first connection`);
+      this.startupTimer = setTimeout(() => {
+        if (this.rooms.size === 0) {
+          console.log(`⏰ No rooms created within startup timeout - exiting Hathora process`);
+          process.exit(0);
+        }
+      }, this.STARTUP_IDLE_TIMEOUT_MS);
+    }
+  }
+  
+  private cancelStartupTimer(): void {
+    if (this.startupTimer) {
+      clearTimeout(this.startupTimer);
+      this.startupTimer = null;
+      console.log(`✅ Startup timer cancelled - room activity detected`);
+    }
+  }
+
+  private scheduleWaitingRoomTimeout(roomId: string, isPublic: boolean): void {
+    // Clear any existing timer for this room
+    this.cancelWaitingRoomTimeout(roomId);
+
+    const timeoutMs = isPublic 
+      ? this.WAITING_ROOM_TIMEOUT_MS_PUBLIC 
+      : this.WAITING_ROOM_TIMEOUT_MS_PRIVATE;
+
+    const timer = setTimeout(() => {
+      const room = this.rooms.get(roomId);
+      if (room && room.state === 'waiting') {
+        console.log(`⏰ Room ${roomId} waiting timeout - no race started, cleaning up`);
+        this.destroyRoom(roomId, 'Room closed due to inactivity');
+      }
+    }, timeoutMs);
+
+    this.waitingRoomTimers.set(roomId, timer);
+    console.log(`⏱️ Scheduled waiting timeout for room ${roomId} in ${timeoutMs / 1000}s (${isPublic ? 'public' : 'private'})`);
+  }
+
+  private cancelWaitingRoomTimeout(roomId: string): void {
+    const timer = this.waitingRoomTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      this.waitingRoomTimers.delete(roomId);
+    }
   }
 
   private generateRoomId(): string {
@@ -51,6 +103,9 @@ export class RoomManager {
 
   createRoom(socket: GameSocket, playerName: string, externalRoomId?: string, isPublic: boolean = false): GameRoom {
     console.log(`📥 createRoom called: playerName=${playerName}, externalRoomId=${externalRoomId}, isPublic=${isPublic} (type: ${typeof isPublic})`);
+    
+    // Cancel startup timer since we have activity
+    this.cancelStartupTimer();
     const roomId = externalRoomId || this.generateRoomId();
     const playerId = socket.id;
     
@@ -105,11 +160,17 @@ export class RoomManager {
       });
     }
     
+    // Schedule waiting room timeout - room will be destroyed if race doesn't start
+    this.scheduleWaitingRoomTimeout(roomId, isPublic);
+    
     return room;
   }
     
 
   joinRoom(socket: GameSocket, roomId: string, playerName: string): GameRoom | null {
+    // Cancel startup timer since we have activity
+    this.cancelStartupTimer();
+    
     const room = this.rooms.get(roomId);
     const playerId = socket.id;
 
@@ -226,6 +287,9 @@ export class RoomManager {
   private startCountdown(roomId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
+
+    // Cancel waiting room timeout since race is starting
+    this.cancelWaitingRoomTimeout(roomId);
 
     room.state = 'countdown';
     room.countdownStart = Date.now();
@@ -507,9 +571,10 @@ export class RoomManager {
       this.playerRooms.delete(player.id);
     });
 
-    // Clean up room
+    // Clean up room and timers
     this.rooms.delete(roomId);
     this.cancelRoomCleanup(roomId);
+    this.cancelWaitingRoomTimeout(roomId);
 
     console.log(`✅ Room ${roomId} destroyed. Remaining rooms: ${this.rooms.size}`);
 
