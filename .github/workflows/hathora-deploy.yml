@@ -34,7 +34,6 @@ jobs:
             --transport-type tls \
             --rooms-per-process 50 \
             --idle-timeout-enabled \
-            --per-room-bandwidth-limit-bytes 102400 \
             --requested-cpu 0.5 \
             --requested-memory-mb 1024 \
             --build-tag ${{ github.sha }} \
