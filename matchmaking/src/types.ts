@@ -15,7 +15,7 @@ export interface MatchResult {
 
 // Messages from client to server
 export type ClientMessage =
-  | { type: 'queue:join'; playerName: string }
+  | { type: 'queue:join'; playerName: string; token?: string }
   | { type: 'queue:leave' }
   | { type: 'ping' };
 

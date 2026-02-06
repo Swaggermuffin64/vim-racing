@@ -11,7 +11,9 @@
     "load-test": "tsx scripts/load-test.ts",
     "load-test:prod": "PROD=1 tsx scripts/load-test.ts",
     "full-game-test": "tsx scripts/full-game-test.ts",
-    "full-game-test:prod": "PROD=1 tsx scripts/full-game-test.ts"
+    "full-game-test:prod": "PROD=1 tsx scripts/full-game-test.ts",
+    "viral-test": "VIRAL=1 tsx scripts/full-game-test.ts",
+    "viral-test:prod": "PROD=1 VIRAL=1 tsx scripts/full-game-test.ts"
   },
   "dependencies": {
     "@hathora/cloud-sdk-typescript": "^2.6.0",

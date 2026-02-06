@@ -5,6 +5,7 @@ import { io, Socket } from 'socket.io-client';
 // Usage:
 //   Local:      NUM_GAMES=5 tsx scripts/full-game-test.ts
 //   Production: PROD=1 NUM_GAMES=5 tsx scripts/full-game-test.ts
+//   Viral test: PROD=1 VIRAL=1 tsx scripts/full-game-test.ts
 
 const PROD_MATCHMAKING_URL = 'wss://your-matchmaker.example.com';
 const LOCAL_MATCHMAKING_URL = 'ws://localhost:3002';
@@ -17,6 +18,24 @@ const NUM_GAMES = parseInt(process.env.NUM_GAMES || '5', 10);
 const STAGGER_MS = parseInt(process.env.STAGGER_MS || '200', 10);
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '120000', 10);
 const TASK_DELAY_MS = parseInt(process.env.TASK_DELAY_MS || '100', 10); // Delay between solving tasks
+const VIRAL_MODE = !!process.env.VIRAL;
+
+// Viral mode: simulates traffic ramping up like a streamer raid
+// Waves get progressively faster to test rate limiting and requeue
+interface Wave {
+  players: number;    // Number of players in this wave
+  staggerMs: number;  // Delay between players
+  pauseAfterMs: number; // Pause before next wave
+}
+
+const VIRAL_WAVES: Wave[] = [
+  { players: 10, staggerMs: 500, pauseAfterMs: 2000 },   // Slow start: 10 players
+  { players: 20, staggerMs: 200, pauseAfterMs: 2000 },   // Picking up: 20 players  
+  { players: 40, staggerMs: 100, pauseAfterMs: 2000 },   // Getting busy: 40 players
+  { players: 80, staggerMs: 50, pauseAfterMs: 2000 },    // Viral spike: 80 players
+  { players: 100, staggerMs: 20, pauseAfterMs: 3000 },   // Peak load: 100 players (will hit rate limits)
+  { players: 50, staggerMs: 100, pauseAfterMs: 0 },      // Tapering off: 50 players
+];
 
 // Task types from backend
 interface Task {
@@ -313,27 +332,34 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
 
 function printStats() {
   const duration = (Date.now() - stats.startTime) / 1000;
+  
+  // Calculate expected totals based on mode
+  const totalPlayers = VIRAL_MODE 
+    ? VIRAL_WAVES.reduce((sum, wave) => sum + wave.players, 0)
+    : NUM_GAMES * 2;
+  const totalGames = Math.floor(totalPlayers / 2);
 
   console.log('\n' + '='.repeat(60));
-  console.log('📊 FULL GAME LOAD TEST RESULTS');
+  console.log(VIRAL_MODE ? '📊 VIRAL TRAFFIC TEST RESULTS' : '📊 FULL GAME LOAD TEST RESULTS');
   console.log('='.repeat(60));
   console.log(`   Target: ${MATCHMAKING_URL}`);
-  console.log(`   Games: ${NUM_GAMES} (${NUM_GAMES * 2} players)`);
+  console.log(`   Mode: ${VIRAL_MODE ? 'Viral (ramping waves)' : 'Standard'}`);
+  console.log(`   Players: ${totalPlayers} (${totalGames} games)`);
   console.log(`   Task delay: ${TASK_DELAY_MS}ms`);
   console.log(`   Duration: ${duration.toFixed(1)}s`);
   console.log('-'.repeat(60));
   console.log('   MATCHMAKING:');
-  console.log(`     Connected: ${stats.matchmakingConnected}/${NUM_GAMES * 2}`);
-  console.log(`     Queued: ${stats.matchmakingQueued}/${NUM_GAMES * 2}`);
-  console.log(`     Matched: ${stats.matchmakingMatched}/${NUM_GAMES * 2}`);
+  console.log(`     Connected: ${stats.matchmakingConnected}/${totalPlayers}`);
+  console.log(`     Queued: ${stats.matchmakingQueued}/${totalPlayers}`);
+  console.log(`     Matched: ${stats.matchmakingMatched}/${totalPlayers}`);
   if (stats.requeued > 0) {
-    console.log(`     Re-queued (rate limited): ${stats.requeued}`);
+    console.log(`     Re-queued (rate limited): ${stats.requeued} 🔄`);
   }
   console.log('-'.repeat(60));
   console.log('   GAME SERVER:');
-  console.log(`     Connected: ${stats.gameServerConnected}/${NUM_GAMES * 2}`);
-  console.log(`     Games Started: ${stats.gamesStarted}/${NUM_GAMES}`);
-  console.log(`     Games Completed: ${stats.gamesCompleted}/${NUM_GAMES}`);
+  console.log(`     Connected: ${stats.gameServerConnected}/${totalPlayers}`);
+  console.log(`     Games Started: ${stats.gamesStarted}/${totalGames}`);
+  console.log(`     Games Completed: ${stats.gamesCompleted}/${totalGames}`);
   console.log(`     Tasks Completed: ${stats.tasksCompleted}`);
   console.log('-'.repeat(60));
   console.log(`   Errors: ${stats.errors}`);
@@ -374,7 +400,62 @@ function printStats() {
   console.log('='.repeat(60) + '\n');
 }
 
+async function runViralTest() {
+  const totalPlayers = VIRAL_WAVES.reduce((sum, wave) => sum + wave.players, 0);
+  const totalGames = Math.floor(totalPlayers / 2);
+  
+  console.log('🚀 Starting VIRAL Traffic Simulation');
+  console.log(`   Target: ${MATCHMAKING_URL}`);
+  console.log(`   Mode: Viral (ramping waves)`);
+  console.log(`   Total Players: ${totalPlayers} across ${VIRAL_WAVES.length} waves`);
+  console.log(`   Task Delay: ${TASK_DELAY_MS}ms`);
+  console.log(`   Timeout: ${TIMEOUT_MS}ms per player`);
+  console.log('');
+  console.log('   Waves:');
+  VIRAL_WAVES.forEach((wave, i) => {
+    const rate = (1000 / wave.staggerMs).toFixed(1);
+    console.log(`     ${i + 1}. ${wave.players} players @ ${wave.staggerMs}ms (${rate}/sec)`);
+  });
+  console.log('');
+
+  const promises: Promise<GameResult>[] = [];
+  let playerNum = 0;
+
+  for (let waveIndex = 0; waveIndex < VIRAL_WAVES.length; waveIndex++) {
+    const wave = VIRAL_WAVES[waveIndex];
+    const rate = (1000 / wave.staggerMs).toFixed(1);
+    console.log(`\n📈 Wave ${waveIndex + 1}: Spawning ${wave.players} players at ${rate}/sec...`);
+
+    for (let i = 0; i < wave.players; i++) {
+      playerNum++;
+      await new Promise((resolve) => setTimeout(resolve, wave.staggerMs));
+      promises.push(simulatePlayer(playerNum));
+    }
+
+    if (wave.pauseAfterMs > 0 && waveIndex < VIRAL_WAVES.length - 1) {
+      console.log(`   ⏸️  Pausing ${wave.pauseAfterMs}ms before next wave...`);
+      await new Promise((resolve) => setTimeout(resolve, wave.pauseAfterMs));
+    }
+  }
+
+  console.log(`\n⏳ Waiting for all ${totalPlayers} players to complete...`);
+  
+  // Wait for all players to complete
+  await Promise.all(promises);
+
+  // Print final stats
+  printStats();
+
+  // Cleanup and exit
+  cleanupAndExit(totalGames);
+}
+
 async function runFullGameTest() {
+  // Delegate to viral test if enabled
+  if (VIRAL_MODE) {
+    return runViralTest();
+  }
+
   console.log('🚀 Starting Full Game Load Test');
   console.log(`   Target: ${MATCHMAKING_URL}`);
   console.log(`   Games: ${NUM_GAMES} (spawning ${NUM_GAMES * 2} players)`);
@@ -398,6 +479,11 @@ async function runFullGameTest() {
   // Print final stats
   printStats();
 
+  // Cleanup and exit
+  cleanupAndExit(NUM_GAMES);
+}
+
+function cleanupAndExit(expectedGames: number) {
   // Close any remaining connections
   activeConnections.forEach((conn) => {
     if (conn instanceof WebSocket) {
@@ -410,8 +496,8 @@ async function runFullGameTest() {
   });
 
   // Exit with error code if not all games completed
-  if (stats.gamesCompleted < NUM_GAMES) {
-    console.log(`⚠️  Warning: Only ${stats.gamesCompleted}/${NUM_GAMES} games completed`);
+  if (stats.gamesCompleted < expectedGames) {
+    console.log(`⚠️  Warning: Only ${stats.gamesCompleted}/${expectedGames} games completed`);
     process.exit(1);
   }
 
