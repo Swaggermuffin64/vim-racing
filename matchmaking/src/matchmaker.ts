@@ -19,10 +19,13 @@ export class Matchmaker {
   private mutex = new Mutex();
   private readonly hathoraClient: HathoraCloud;
   private readonly playersPerMatch: number;
+  private retryScheduled: boolean = false;
+  private readonly retryDelayMs: number = 3000; // Wait 3s before retrying after rate limit
 
-  constructor(options?: { playersPerMatch?: number }) {
+  constructor(options?: { playersPerMatch?: number; retryDelayMs?: number }) {
     this.hathoraClient = createHathoraClient();
     this.playersPerMatch = options?.playersPerMatch ?? 2;
+    this.retryDelayMs = options?.retryDelayMs ?? 3000;
   }
 
   start() {
@@ -74,6 +77,22 @@ export class Matchmaker {
 
   getQueueSize(): number {
     return this.queue.size;
+  }
+
+  private scheduleRetry(): void {
+    // Prevent multiple concurrent retries
+    if (this.retryScheduled) return;
+    
+    this.retryScheduled = true;
+    console.log(`🔄 Scheduling retry in ${this.retryDelayMs}ms (queue size: ${this.queue.size})`);
+    
+    setTimeout(() => {
+      this.retryScheduled = false;
+      if (this.queue.size >= this.playersPerMatch) {
+        console.log(`🔄 Retrying match for ${this.queue.size} queued players`);
+        this.tryMatch();
+      }
+    }, this.retryDelayMs);
   }
 
   groupPlayers(): { roomGroups: QueuedPlayer[][], groupedPlayers: QueuedPlayer[] } {
@@ -171,6 +190,8 @@ export class Matchmaker {
             this.queue.set(player.id, player);
             this.send(player.socket, {type: 'error', message: 'Failed to create match'})
           }
+          // Schedule retry for re-queued players
+          this.scheduleRetry();
         }
       }
     } catch (err: any) {
@@ -186,6 +207,9 @@ export class Matchmaker {
           });
         }
       });
+      
+      // Schedule retry for re-queued players
+      this.scheduleRetry();
     }
   }
 

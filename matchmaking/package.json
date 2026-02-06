@@ -9,13 +9,15 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "load-test": "tsx scripts/load-test.ts",
-    "load-test:local": "MATCHMAKING_URL=ws://localhost:3002 NUM_PLAYERS=10 tsx scripts/load-test.ts",
-    "load-test:live": "NUM_PLAYERS=10 tsx scripts/load-test.ts"
+    "load-test:prod": "PROD=1 tsx scripts/load-test.ts",
+    "full-game-test": "tsx scripts/full-game-test.ts",
+    "full-game-test:prod": "PROD=1 tsx scripts/full-game-test.ts"
   },
   "dependencies": {
     "@hathora/cloud-sdk-typescript": "^2.6.0",
     "async-mutex": "^0.5.0",
     "dotenv": "^17.2.3",
+    "socket.io-client": "^4.7.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
