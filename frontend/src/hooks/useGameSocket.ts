@@ -30,13 +30,28 @@ const getHathoraClient = async () => {
   return hathoraClientPromise;
 };
 
-// Get or create anonymous player token for Lobbies API (used for private room creation)
-const getPlayerToken = async (): Promise<string> => {
+/**
+ * Get or create anonymous player token for authentication.
+ * This token is used for:
+ * - Hathora Lobbies API (creating/joining rooms)
+ * - Authenticating Socket.IO connections to game servers
+ * - Authenticating with matchmaking service
+ * 
+ * In production (USE_HATHORA=true), gets a real Hathora token.
+ * In local development, returns null (backend allows unauthenticated connections).
+ */
+const getPlayerToken = async (): Promise<string | null> => {
+  if (!USE_HATHORA) {
+    // Local development - no auth required
+    return null;
+  }
+  
   if (!playerTokenPromise) {
     playerTokenPromise = (async () => {
       const client = await getHathoraClient();
       if (!client) throw new Error('Hathora client not initialized');
       const auth = await client.authV1.loginAnonymous(HATHORA_APP_ID);
+      console.log('🔑 Obtained Hathora auth token');
       return auth.token;
     })();
   }
@@ -254,8 +269,12 @@ export function useGameSocket(): UseGameSocketReturn {
       socketRef.current.disconnect();
     }
 
+    // Get auth token for authenticated connections
+    const token = await getPlayerToken();
+
     const socket = io(url, {
       transports: ['websocket', 'polling'],
+      auth: token ? { token } : undefined,
     });
 
     socketRef.current = socket;
@@ -418,13 +437,17 @@ export function useGameSocket(): UseGameSocketReturn {
           matchmakingWsRef.current.close();
         }
 
+        // Get auth token for matchmaking
+        const token = await getPlayerToken();
+
         console.log(`🎮 Connecting to matchmaking server: ${MATCHMAKING_URL}`);
         const ws = new WebSocket(MATCHMAKING_URL);
         matchmakingWsRef.current = ws;
 
         ws.onopen = () => {
           console.log('🔌 Connected to matchmaking server');
-          ws.send(JSON.stringify({ type: 'queue:join', playerName }));
+          // Include auth token in queue join message
+          ws.send(JSON.stringify({ type: 'queue:join', playerName, token }));
         };
 
         ws.onmessage = async (event) => {

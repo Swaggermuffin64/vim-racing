@@ -33,7 +33,7 @@ export class RoomManager {
   private roomCleanupTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> cleanup timer
   private waitingRoomTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> waiting timeout
   private io: GameServer;
-  private NUM_TASKS: number = 5;
+  private NUM_TASKS: number = 10;
   private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
   private WAITING_ROOM_TIMEOUT_MS_PRIVATE = 5 * 60 * 1000; // 5 minutes for private rooms (friends coordinating)
   private WAITING_ROOM_TIMEOUT_MS_PUBLIC = 30 * 1000; // 30 seconds for public rooms (auto-ready should fire in ~2s)
@@ -117,9 +117,11 @@ export class RoomManager {
       isFinished: false,
       readyToPlay: false
     };
-
-    const deleteTasks: Task[] = generateDeleteTasks(this.NUM_TASKS);
-    console.log('Generated deleteTasks:', JSON.stringify(deleteTasks, null, 2));
+    const tasksPerType = Math.floor(this.NUM_TASKS / 2);
+    const positionTasks: Task[] = generatePositionTasks(tasksPerType);
+    const deleteTasks: Task[] = generateDeleteTasks(tasksPerType);
+    const allTasks = shuffle([...positionTasks, ...deleteTasks]);
+    console.log('Generated tasks:', allTasks.map(t => t.type));
     
     //add a finished task to the end of the tasks array
     const finishedTask: Task = {
@@ -134,7 +136,7 @@ export class RoomManager {
     const room: GameRoom = {
       id: roomId,
       players: new Map([[playerId, player]]),
-      tasks: [...deleteTasks, finishedTask],
+      tasks: [...allTasks, finishedTask],
       num_tasks: this.NUM_TASKS,
       state: 'waiting',
       isPublic,
@@ -614,10 +616,19 @@ export class RoomManager {
     // Cancel any pending cleanup since players want to play again
     this.cancelRoomCleanup(roomId);
 
-    // Generate new tasks
-    const positionTasks = generatePositionTasks(this.NUM_TASKS);
-    const deleteTasks = generateDeleteTasks(this.NUM_TASKS);
-    room.tasks = shuffle([...positionTasks, ...deleteTasks]);
+    // Generate new tasks (half position + half delete)
+    const tasksPerType = Math.floor(this.NUM_TASKS / 2);
+    const positionTasks = generatePositionTasks(tasksPerType);
+    const deleteTasks = generateDeleteTasks(tasksPerType);
+    const finishedTask: Task = {
+      id: '',
+      type: 'navigate',
+      description: '',
+      codeSnippet: '',
+      targetPosition: { line: 1, col: 0 },
+      targetOffset: 0,
+    };
+    room.tasks = [...shuffle([...positionTasks, ...deleteTasks]), finishedTask];
 
     // Reset all player states
     room.players.forEach(player => {

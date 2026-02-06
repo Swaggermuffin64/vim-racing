@@ -123,7 +123,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-const positionEmojis = ['🥇', '🥈', '🥉'];
+const positionLabels = ['1st', '2nd', '3rd'];
 const positionColors = [colors.gold, colors.silver, colors.bronze];
 
 export const RaceResults: React.FC<RaceResultsProps> = ({
@@ -150,7 +150,7 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
     <div style={styles.overlay}>
       <div style={styles.container}>
         <div style={styles.title}>
-          {isWinner ? '🎉 Victory!' : 'Race Complete'}
+          {isWinner ? 'Victory!' : 'Race Complete'}
         </div>
         <p style={styles.subtitle}>
           {isWinner 
@@ -175,7 +175,7 @@ export const RaceResults: React.FC<RaceResultsProps> = ({
                   color: positionColors[index] || colors.textMuted,
                 }}
               >
-                {positionEmojis[index] || `#${index + 1}`}
+                {positionLabels[index] || `#${index + 1}`}
               </div>
               <div style={styles.playerInfo}>
                 <div style={styles.playerName}>

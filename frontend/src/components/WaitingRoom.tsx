@@ -112,7 +112,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '20px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: colors.accentLight,
+    fontFamily: '"JetBrains Mono", monospace',
   },
   playerName: {
     fontSize: '15px',
@@ -358,7 +361,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         <div style={styles.roomCodeLabel}>Room ID</div>
         <div style={styles.roomCode}>{roomId}</div>
         <div style={styles.shareText}>
-          {copied ? '✓ Copied to clipboard!' : 'Click to copy'}
+          {copied ? 'Copied to clipboard' : 'Click to copy'}
         </div>
       </div>
 
@@ -368,14 +371,14 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         {players.map((player) => (
           <div key={player.id} style={styles.playerCard}>
             <div style={styles.playerAvatar}>
-              {player.id === myPlayerId ? '👤' : '🎮'}
+              {player.id === myPlayerId ? 'You' : 'P2'}
             </div>
             <div style={styles.playerName}>
               {player.name}
               {player.id === myPlayerId && ' (You)'}
             </div>
             {player.readyToPlay && (
-              <div style={styles.readyBadge}>✓ Ready</div>
+              <div style={styles.readyBadge}>Ready</div>
             )}
           </div>
         ))}
@@ -398,7 +401,7 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
             onClick={onReady}
             disabled={isReady}
           >
-            {isReady ? '✓ Ready!' : 'Ready'}
+            {isReady ? 'Ready' : 'Ready'}
           </button>
         )}
       </div>

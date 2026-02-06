@@ -534,7 +534,7 @@ const MultiplayerGame: React.FC = () => {
 
       <div style={styles.raceContainer}>
         <div style={styles.header}>
-          <div style={styles.title}>🏎️ Vim Racing</div>
+          <div style={styles.title}>Vim Racing</div>
           <div style={styles.timer}>{formatTime(elapsedTime)}</div>
           <button style={styles.leaveButton} onClick={leaveRoom}>
             Leave
@@ -544,7 +544,6 @@ const MultiplayerGame: React.FC = () => {
         {gameState.task.id && (
           <div style={styles.taskBanner}>
             <div style={styles.taskType}>
-              {gameState.task.type === 'navigate' ? '🎯' : '✂️'}
               {gameState.task.type === 'navigate' ? 'Navigate to target' : 'Delete the highlighted text'}
             </div>
             <div style={styles.taskDescription}>{gameState.task.description}</div>
@@ -555,16 +554,16 @@ const MultiplayerGame: React.FC = () => {
           {/* My Editor */}
           <div style={styles.editorPanel}>
             <div style={styles.editorLabel}>
-              🏎️ You ({me?.name || 'Player'})
+              You ({me?.name || 'Player'})
               {me?.isFinished && (
                 <span style={styles.finishedBadge}>
-                  ✓ {formatTime(me.finishTime || 0)}
+                  {formatTime(me.finishTime || 0)}
                 </span>
               )}
             </div>
             {me?.isFinished ? (
               <div style={styles.waitingContainer}>
-                <div style={styles.waitingTitle}>🎉 Finished!</div>
+                <div style={styles.waitingTitle}>Finished!</div>
                 <div style={styles.waitingText}>Waiting for other players...</div>
                 <div style={styles.waitingTime}>{formatTime(me.finishTime || 0)}</div>
               </div>
@@ -577,7 +576,7 @@ const MultiplayerGame: React.FC = () => {
  
           {/* Scoreboard */}
           <div style={styles.scoreboard}>
-            <div style={styles.scoreboardTitle}>🏁 Scoreboard</div>
+            <div style={styles.scoreboardTitle}>Scoreboard</div>
             {gameState.players.map(player => (
               <div 
                 key={player.id} 
@@ -587,7 +586,6 @@ const MultiplayerGame: React.FC = () => {
                 }}
               >
                 <span>
-                  {player.id === gameState.myPlayerId ? '👤 ' : ''}
                   {player.name}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -596,7 +594,7 @@ const MultiplayerGame: React.FC = () => {
                   </span>
                   {player.isFinished && (
                     <span style={styles.finishedBadge}>
-                      ✓ {formatTime(player.finishTime || 0)}
+                      {formatTime(player.finishTime || 0)}
                     </span>
                   )}
                 </span>

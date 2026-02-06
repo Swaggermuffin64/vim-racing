@@ -59,5 +59,9 @@ export interface SocketData {
   playerId: string;
   playerName: string;
   roomId?: string;
+  /** Authenticated user ID from Hathora token */
+  userId?: string;
+  /** Client IP address for connection limiting */
+  clientIp?: string;
 }
 

@@ -35,10 +35,63 @@ const colors = {
 };
 
 const styles: Record<string, React.CSSProperties> = {
+  pageWrapper: {
+    minHeight: '100vh',
+    background: `linear-gradient(180deg, ${colors.bgDark} 0%, #0f0f1a 100%)`,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    position: 'relative' as const,
+    overflow: 'hidden',
+  },
+  topBanner: {
+    width: '100%',
+    padding: '16px 32px',
+    background: '#000000',
+    flexShrink: 0,
+    position: 'relative' as const,
+    zIndex: 2,
+  },
+  topBannerTitle: {
+    fontSize: '20px',
+    fontWeight: 700,
+    color: colors.textPrimary,
+    fontFamily: '"JetBrains Mono", monospace',
+    margin: 0,
+  },
+  mainContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative' as const,
+  },
+  bgGlow1: {
+    position: 'absolute' as const,
+    top: '10%',
+    left: '10%',
+    width: '500px',
+    height: '500px',
+    background: `radial-gradient(circle, rgba(6, 182, 212, 0.3) 0%, transparent 70%)`,
+    filter: 'blur(80px)',
+    pointerEvents: 'none' as const,
+  },
+  bgGlow2: {
+    position: 'absolute' as const,
+    bottom: '10%',
+    right: '10%',
+    width: '500px',
+    height: '500px',
+    background: `radial-gradient(circle, rgba(236, 72, 153, 0.3) 0%, transparent 70%)`,
+    filter: 'blur(80px)',
+    pointerEvents: 'none' as const,
+  },
   container: {
     maxWidth: '480px',
     margin: '0 auto',
     padding: '64px 32px',
+    position: 'relative' as const,
+    zIndex: 1,
   },
   header: {
     textAlign: 'center' as const,
@@ -252,8 +305,15 @@ export const Lobby: React.FC<LobbyProps> = ({
     const isInQueue = queuePosition !== null;
     
     return (
-      <div style={styles.container}>
-        <div style={styles.header}>
+      <div style={styles.pageWrapper}>
+        <div style={styles.topBanner}>
+          <div style={styles.topBannerTitle}>VIM_GYM</div>
+        </div>
+        <div style={styles.mainContent}>
+          <div style={styles.bgGlow1} />
+          <div style={styles.bgGlow2} />
+          <div style={styles.container}>
+            <div style={styles.header}>
           <h1 style={styles.title}>{getTitle()}</h1>
           <p style={styles.subtitle}>{getSubtitle()}</p>
           
@@ -352,6 +412,8 @@ export const Lobby: React.FC<LobbyProps> = ({
         >
           ← Back
         </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -359,8 +421,15 @@ export const Lobby: React.FC<LobbyProps> = ({
   // Private Match flow
   if (initialMode === 'private') {
     return (
-      <div style={styles.container}>
-        <div style={styles.header}>
+      <div style={styles.pageWrapper}>
+        <div style={styles.topBanner}>
+          <div style={styles.topBannerTitle}>VIM_GYM</div>
+        </div>
+        <div style={styles.mainContent}>
+          <div style={styles.bgGlow1} />
+          <div style={styles.bgGlow2} />
+          <div style={styles.container}>
+            <div style={styles.header}>
           <h1 style={styles.title}>{getTitle()}</h1>
           <p style={styles.subtitle}>{getSubtitle()}</p>
           
@@ -455,20 +524,31 @@ export const Lobby: React.FC<LobbyProps> = ({
         >
           ← Back
         </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   // Fallback (shouldn't happen if routed correctly, but just in case)
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
+    <div style={styles.pageWrapper}>
+      <div style={styles.topBanner}>
+        <div style={styles.topBannerTitle}>VIM_GYM</div>
+      </div>
+      <div style={styles.mainContent}>
+        <div style={styles.bgGlow1} />
+        <div style={styles.bgGlow2} />
+        <div style={styles.container}>
+          <div style={styles.header}>
         <h1 style={styles.title}>{getTitle()}</h1>
         <p style={styles.subtitle}>{getSubtitle()}</p>
       </div>
       <button style={styles.backButton} onClick={handleBack}>
         ← Back to Home
       </button>
+        </div>
+      </div>
     </div>
   );
 };

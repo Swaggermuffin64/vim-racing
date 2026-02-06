@@ -5,6 +5,8 @@ interface TaskBannerProps {
   task: Task | null;
   isComplete: boolean;
   onNextTask: () => void;
+  taskProgress?: number;
+  numTasks?: number;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -67,7 +69,9 @@ const styles: Record<string, React.CSSProperties> = {
 export const TaskBanner: React.FC<TaskBannerProps> = ({ 
   task, 
   isComplete, 
-  onNextTask 
+  onNextTask,
+  taskProgress,
+  numTasks,
 }) => {
   if (!task) {
     return (
@@ -77,11 +81,15 @@ export const TaskBanner: React.FC<TaskBannerProps> = ({
     );
   }
 
+  const showProgress = taskProgress !== undefined && numTasks !== undefined;
+  const taskLabel = task.type === 'navigate' ? 'Navigate' : task.type === 'delete' ? 'Delete' : task.type;
+
   return (
     <div style={{ ...styles.container, ...(isComplete ? styles.complete : {}) }}>
       <div style={styles.header}>
         <span style={styles.taskType}>
-          🎯 {task.type === 'navigate' ? 'Navigate' : task.type}
+          {taskLabel}
+          {showProgress && ` (${taskProgress + 1}/${numTasks})`}
         </span>
         {isComplete && (
           <button style={styles.button} onClick={onNextTask}>
@@ -90,16 +98,21 @@ export const TaskBanner: React.FC<TaskBannerProps> = ({
         )}
       </div>
       <div style={{ ...styles.description, ...(isComplete ? styles.completeText : {}) }}>
-        {isComplete ? '✓ Complete! ' : ''}{task.description}
+        {isComplete ? 'Complete! ' : ''}{task.description}
       </div>
       {!isComplete && task.type === 'navigate' && (
         <div style={styles.hint}>
-          💡 Use vim motions like <code>gg</code>, <code>G</code>, <code>w</code>, <code>f</code>, <code>$</code> to navigate
+          Use vim motions like <code>gg</code>, <code>G</code>, <code>w</code>, <code>f</code>, <code>$</code> to navigate
+        </div>
+      )}
+      {!isComplete && task.type === 'delete' && (
+        <div style={styles.hint}>
+          Use vim delete commands like <code>dw</code>, <code>dd</code>, <code>d$</code>, <code>di{'{'}</code>, <code>da(</code> to delete
         </div>
       )}
       {isComplete && (
         <div style={styles.hint}>
-          ⏎ Press <code>Enter</code> for next task
+          Press <code>Enter</code> for next task
         </div>
       )}
     </div>
