@@ -82,7 +82,7 @@ export const TaskBanner: React.FC<TaskBannerProps> = ({
   }
 
   const showProgress = taskProgress !== undefined && numTasks !== undefined;
-  const taskLabel = task.type === 'navigate' ? 'Navigate' : task.type === 'delete' ? 'Delete' : task.type;
+  const taskLabel = task.type === 'navigate' ? 'Navigate' : 'Delete';
 
   return (
     <div style={{ ...styles.container, ...(isComplete ? styles.complete : {}) }}>

@@ -723,8 +723,7 @@ const VimEditor: React.FC = () => {
   const getTaskTypeDisplay = (task: Task | null) => {
     if (!task) return { label: 'Loading...' };
     if (task.type === 'navigate') return { label: 'Navigate to target' };
-    if (task.type === 'delete') return { label: 'Delete the highlighted text' };
-    return { label: task.type };
+    return { label: 'Delete the highlighted text' };
   };
 
   const taskDisplay = getTaskTypeDisplay(currentTask);

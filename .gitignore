@@ -3,3 +3,6 @@
 *.env
 node_modules/
 .DS_Store
+
+# Build outputs
+backend/dist/
