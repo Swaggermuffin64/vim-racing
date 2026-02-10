@@ -30,16 +30,18 @@ function getClientIp(req: IncomingMessage): string {
 const REQUIRE_AUTH = process.env.NODE_ENV === 'production' || process.env.REQUIRE_AUTH === 'true';
 
 const PORT = parseInt(process.env.PORT || '3002', 10);
+const HOST = process.env.HOST || '0.0.0.0';
 const PLAYERS_PER_MATCH = parseInt(process.env.PLAYERS_PER_MATCH || '2', 10);
+const HATHORA_TOKEN = process.env.HATHORA_TOKEN || process.env.HATHORA_DEV_TOKEN;
 
 // Validate required env vars
-if (!process.env.HATHORA_APP_ID || !process.env.HATHORA_TOKEN) {
+if (!process.env.HATHORA_APP_ID || !HATHORA_TOKEN) {
   console.error('❌ Missing required environment variables:');
-  console.error('   HATHORA_APP_ID and HATHORA_TOKEN must be set');
+  console.error('   HATHORA_APP_ID and either HATHORA_TOKEN or HATHORA_DEV_TOKEN must be set');
   console.error('');
   console.error('   Create a .env file with:');
   console.error('   HATHORA_APP_ID=your_app_id');
-  console.error('   HATHORA_DEV_TOKEN=your_dev_token');
+  console.error('   HATHORA_TOKEN=your_token (or HATHORA_DEV_TOKEN=your_token)');
   process.exit(1);
 }
 
@@ -218,11 +220,11 @@ process.on('SIGINT', () => {
 });
 
 // Start HTTP server (WebSocket server is attached to it)
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   matchmaker.start();
-  console.log(`🚀 Matchmaking server running on http://localhost:${PORT}`);
-  console.log(`   WebSocket: ws://localhost:${PORT}`);
-  console.log(`   Practice API: http://localhost:${PORT}/api/task/practice`);
+  console.log(`🚀 Matchmaking server running on http://${HOST}:${PORT}`);
+  console.log(`   WebSocket: ws://${HOST}:${PORT}`);
+  console.log(`   Practice API: http://${HOST}:${PORT}/api/task/practice`);
   console.log(`   Hathora App ID: configured`);
   console.log(`   Players per match: ${PLAYERS_PER_MATCH}`);
   console.log(`   Auth required: ${REQUIRE_AUTH}`);
