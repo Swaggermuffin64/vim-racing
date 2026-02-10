@@ -1,73 +1,14 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { EditorState, Compartment } from "@codemirror/state";
-import { cpp } from "@codemirror/lang-cpp";
-import {
-  EditorView, keymap, drawSelection,
-  highlightActiveLine, lineNumbers, highlightActiveLineGutter
-} from "@codemirror/view";
-import { defaultKeymap } from "@codemirror/commands";
-import { searchKeymap } from "@codemirror/search";
-import { vim } from '@replit/codemirror-vim';
-import { oneDark } from '@codemirror/theme-one-dark';
 
 import { useGameSocket } from '../hooks/useGameSocket';
 import { Lobby } from '../components/Lobby';
 import { WaitingRoom } from '../components/WaitingRoom';
 import { RaceCountdown } from '../components/RaceCountdown';
 import { RaceResults } from '../components/RaceResults';
-import { targetHighlightExtension, setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
-import { cursorTracker } from '../extensions/cursorTracker';
-import { readOnlyNavigation, setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
-
-// Line numbers compartment for relative mode
-const lineNumbersCompartment = new Compartment();
-
-function createLineNumbersExtension(relative: boolean) {
-  return lineNumbers({
-    formatNumber: (lineNo: number, state: EditorState) => {
-      if (!relative) return String(lineNo);
-      const cursorLine = state.doc.lineAt(state.selection.main.head).number;
-      if (lineNo === cursorLine) return String(lineNo);
-      return String(Math.abs(cursorLine - lineNo));
-    },
-  });
-}
-
-// Color palette - cohesive cyberpunk/neon theme
-const colors = {
-  // Base
-  bgDark: '#0a0a0f',
-  bgCard: '#12121a',
-  bgGradientStart: '#0f172a',
-  bgGradientEnd: '#1e1b4b',
-  
-  // Primary accent (cyan/teal) - matches navigate highlight
-  primary: '#06b6d4',
-  primaryLight: '#22d3ee',
-  primaryGlow: 'rgba(6, 182, 212, 0.3)',
-  
-  // Secondary accent (magenta/pink) - matches delete highlight
-  secondary: '#ec4899',
-  secondaryLight: '#f472b6',
-  
-  // Success (emerald)
-  success: '#10b981',
-  successLight: '#34d399',
-  
-  // Warning/Timer (amber)
-  warning: '#fbbf24',
-  warningDark: '#f59e0b',
-  
-  // Text
-  textPrimary: '#f1f5f9',
-  textSecondary: '#94a3b8',
-  textMuted: '#64748b',
-  
-  // Borders
-  border: '#334155',
-  borderLight: '#475569',
-};
+import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
+import { setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
+import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -243,7 +184,7 @@ const styles: Record<string, React.CSSProperties> = {
 const MultiplayerGame: React.FC = () => {
   const [searchParams] = useSearchParams();
   const initialMode = searchParams.get('mode') as 'quick' | 'private' | null;
-  
+
   const {
     isConnected,
     isConnecting,
@@ -261,26 +202,26 @@ const MultiplayerGame: React.FC = () => {
     clearResetFlag,
   } = useGameSocket();
 
-  const myEditorRef = useRef<HTMLDivElement>(null);
-  const myViewRef = useRef<EditorView | null>(null);
+  const editorRef = useRef<VimRaceEditorHandle>(null);
   const timerRef = useRef<number>(0);
   const [elapsedTime, setElapsedTime] = React.useState(0);
 
-  // Use ref to avoid stale closure in cursorTracker and document listener
+  // Stable refs for callbacks used in CodeMirror extensions
   const sendCursorMoveRef = useRef(sendCursorMove);
   const sendEditorTextRef = useRef(sendEditorText);
-  useEffect(() => {
-    sendCursorMoveRef.current = sendCursorMove;
-  }, [sendCursorMove]);
-  useEffect(() => {
-    sendEditorTextRef.current = sendEditorText;
-  }, [sendEditorText]);
+  useEffect(() => { sendCursorMoveRef.current = sendCursorMove; }, [sendCursorMove]);
+  useEffect(() => { sendEditorTextRef.current = sendEditorText; }, [sendEditorText]);
 
   const me = gameState.players.find(p => p.id === gameState.myPlayerId);
 
-  // Handle cursor movement in my editor (uses ref to always get latest sendCursorMove)
+  // Handle cursor movement (uses ref to always get latest sendCursorMove)
   const handleCursorChange = useCallback((offset: number) => {
     sendCursorMoveRef.current(offset);
+  }, []);
+
+  // Handle document changes (send new text to server for validation)
+  const handleDocChange = useCallback((text: string) => {
+    sendEditorTextRef.current(text);
   }, []);
 
   // Timer effect
@@ -296,124 +237,35 @@ const MultiplayerGame: React.FC = () => {
     }
   }, [gameState.roomState, gameState.startTime]);
 
-  // Document change listener for delete task validation
-  const documentChangeListener = React.useMemo(
-    () => EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        const newText = update.state.doc.toString();
-        sendEditorTextRef.current(newText);
-      }
-    }),
-    []
-  );
-
-  // Track the current task ID to detect task changes
+  // Track the current task ID to detect task transitions
   const currentTaskIdRef = useRef<string | null>(null);
 
-  // Initialize my editor
+  // Reset task tracking when not racing (between games)
   useEffect(() => {
-    if (gameState.roomState === 'racing' && myEditorRef.current && !myViewRef.current && gameState.task.id) {
-      currentTaskIdRef.current = gameState.task.id;
-      
-      myViewRef.current = new EditorView({
-        doc: String(gameState.task.codeSnippet), // Make a copy, not a reference
-        parent: myEditorRef.current,
-        extensions: [
-          vim(),
-          cpp(),
-          oneDark,
-          readOnlyNavigation,
-          documentChangeListener,
-          ...targetHighlightExtension,
-          cursorTracker(handleCursorChange),
-          lineNumbersCompartment.of(createLineNumbersExtension(true)),
-          drawSelection(),
-          highlightActiveLine(),
-          highlightActiveLineGutter(),
-          keymap.of([...defaultKeymap, ...searchKeymap]),
-          EditorView.theme({
-            '&': {
-              fontSize: '14px',
-              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-            },
-            '.cm-content': {
-              caretColor: colors.primary,
-            },
-            '.cm-cursor, .cm-dropCursor': {
-              borderLeftColor: colors.primary,
-              borderLeftWidth: '2px',
-            },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-              backgroundColor: `${colors.primary}30`,
-            },
-            '.cm-activeLine': {
-              backgroundColor: `${colors.primary}10`,
-            },
-            '.cm-activeLineGutter': {
-              backgroundColor: `${colors.primary}15`,
-            },
-            '.cm-gutters': {
-              backgroundColor: colors.bgCard,
-              borderRight: `1px solid ${colors.border}`,
-            },
-            '.cm-lineNumbers .cm-gutterElement': {
-              color: colors.textMuted,
-            },
-            '.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter': {
-              color: colors.primaryLight,
-            },
-          }),
-        ],
-      });
-
-      // Set target highlight and enable delete mode if needed
-      if (gameState.task.type === 'navigate') {
-        myViewRef.current.dispatch({
-          effects: setTargetPosition.of(gameState.task.targetOffset),
-        });
-      } else if (gameState.task.type === 'delete') {
-        myViewRef.current.dispatch({
-          effects: [
-            setTargetRange.of(gameState.task.targetRange),
-            setDeleteMode.of(true),
-            setAllowedDeleteRange.of(gameState.task.targetRange),
-          ],
-        });
-      }
-
-      // Focus the editor
-      setTimeout(() => myViewRef.current?.focus(), 100);
+    if (gameState.roomState !== 'racing') {
+      currentTaskIdRef.current = null;
     }
+  }, [gameState.roomState]);
 
-    return () => {
-      if (myViewRef.current) {
-        myViewRef.current.destroy();
-        myViewRef.current = null;
-      }
-    };
-  }, [gameState.roomState, gameState.task, handleCursorChange, documentChangeListener]);
-
-  // Handle task transitions (when a new task is received after completing one)
+  // Set up task highlights (initial + transitions)
   useEffect(() => {
-    if (!myViewRef.current || !gameState.task.id) return;
-    
-    // Check if this is a new task
+    const view = editorRef.current?.view;
+    if (!view || !gameState.task.id) return;
     if (currentTaskIdRef.current === gameState.task.id) return;
+
+    // Replace doc only for subsequent tasks (the first one is set via initialDoc)
+    if (currentTaskIdRef.current !== null) {
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: gameState.task.codeSnippet,
+        },
+      });
+    }
     currentTaskIdRef.current = gameState.task.id;
 
-    const view = myViewRef.current;
-    const newSnippet = gameState.task.codeSnippet;
-
-    // Replace the entire document with the new code sngetEventDataEventsippet
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: newSnippet,
-      },
-    });
-
-    // Set up highlights and delete mode based on task type
+    // Set up highlights based on task type
     if (gameState.task.type === 'navigate') {
       view.dispatch({
         effects: [
@@ -433,22 +285,14 @@ const MultiplayerGame: React.FC = () => {
     }
   }, [gameState.task]);
 
-  // Clean up editor when player finishes
+  // Handle validation failure — reset editor to original task text
   useEffect(() => {
-    if (me?.isFinished && myViewRef.current) {
-      myViewRef.current.destroy();
-      myViewRef.current = null;
-    }
-  }, [me?.isFinished]);
+    if (!gameState.shouldResetEditor || !gameState.task.id) return;
+    const view = editorRef.current?.view;
+    if (!view) return;
 
-  // Handle validation failure - reset editor to original text from task
-  useEffect(() => {
-    if (!gameState.shouldResetEditor || !myViewRef.current || !gameState.task.id) return;
     console.log("resetting editor");
-    const view = myViewRef.current;
 
-    // Replace the entire document with the original code snippet from the task
-    // Use allowReset effect to bypass the readOnlyNavigation filter
     view.dispatch({
       changes: {
         from: 0,
@@ -458,7 +302,6 @@ const MultiplayerGame: React.FC = () => {
       effects: allowReset.of(true),
     });
 
-    // Reset the target highlight based on task type
     if (gameState.task.type === 'navigate') {
       view.dispatch({
         effects: setTargetPosition.of(gameState.task.targetOffset),
@@ -466,13 +309,11 @@ const MultiplayerGame: React.FC = () => {
     } else if (gameState.task.type === 'delete') {
       view.dispatch({
         effects: setTargetRange.of(gameState.task.targetRange),
-    });
+      });
     }
-    
-    // Clear the reset flag
+
     clearResetFlag();
   }, [gameState.shouldResetEditor, gameState.task, clearResetFlag]);
-  // Update opponent cursor position with yellow highlight
 
   // Format time display
   const formatTime = (ms: number): string => {
@@ -569,17 +410,24 @@ const MultiplayerGame: React.FC = () => {
               </div>
             ) : (
               <div style={styles.editorWrapper}>
-                <div ref={myEditorRef} />
+                {gameState.task.id && (
+                  <VimRaceEditor
+                    ref={editorRef}
+                    initialDoc={gameState.task.codeSnippet}
+                    onCursorChange={handleCursorChange}
+                    onDocChange={handleDocChange}
+                  />
+                )}
               </div>
             )}
           </div>
- 
+
           {/* Scoreboard */}
           <div style={styles.scoreboard}>
             <div style={styles.scoreboardTitle}>Scoreboard</div>
             {gameState.players.map(player => (
-              <div 
-                key={player.id} 
+              <div
+                key={player.id}
                 style={{
                   ...styles.scoreboardPlayer,
                   color: player.id === gameState.myPlayerId ? colors.primaryLight : colors.textSecondary,
@@ -608,4 +456,3 @@ const MultiplayerGame: React.FC = () => {
 };
 
 export default MultiplayerGame;
-

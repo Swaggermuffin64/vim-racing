@@ -1,61 +1,15 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { EditorState, Compartment } from "@codemirror/state"
-import { cpp } from "@codemirror/lang-cpp"
-import {
-  EditorView, keymap, drawSelection,
-  highlightActiveLine, lineNumbers, highlightActiveLineGutter
-} from "@codemirror/view"
-import { defaultKeymap } from "@codemirror/commands"
-import { searchKeymap } from "@codemirror/search"
-import { vim } from '@replit/codemirror-vim'
-import { oneDark } from '@codemirror/theme-one-dark'
 
 import { Task } from '../types/task';
-import { targetHighlightExtension, setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
-import { cursorTracker } from '../extensions/cursorTracker';
-import { readOnlyNavigation, setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
+import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
+import { setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
+import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 
-const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-
-// Compartment for reconfigurable line numbers
-const lineNumbersCompartment = new Compartment();
-
-// Create line numbers config based on relative mode
-function createLineNumbersExtension(relative: boolean) {
-  return lineNumbers({
-    formatNumber: (lineNo: number, state: EditorState) => {
-      if (!relative) {
-        return String(lineNo);
-      }
-      const cursorLine = state.doc.lineAt(state.selection.main.head).number;
-      if (lineNo === cursorLine) {
-        return String(lineNo);
-      }
-      return String(Math.abs(cursorLine - lineNo));
-    },
-  });
-}
-
-// Color palette - matching multiplayer
-const colors = {
-  bgDark: '#0a0a0f',
-  bgCard: '#12121a',
-  bgGradientStart: '#0f172a',
-  bgGradientEnd: '#1e1b4b',
-  primary: '#06b6d4',
-  primaryLight: '#22d3ee',
-  primaryGlow: 'rgba(6, 182, 212, 0.3)',
-  secondary: '#ec4899',
-  secondaryLight: '#f472b6',
-  success: '#10b981',
-  successLight: '#34d399',
-  warning: '#fbbf24',
-  textPrimary: '#f1f5f9',
-  textSecondary: '#94a3b8',
-  textMuted: '#64748b',
-  border: '#334155',
-};
+// Practice API uses the matchmaking server (which has the HTTP endpoint)
+// Convert ws:// to http:// or wss:// to https://
+const MATCHMAKING_URL = import.meta.env.VITE_MATCHMAKING_URL || 'ws://localhost:3002';
+const API_BASE = MATCHMAKING_URL.replace(/^ws/, 'http');
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -426,12 +380,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-const VimEditor: React.FC = () => {
+const PracticeEditor: React.FC = () => {
   const navigate = useNavigate();
-  const editorRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const editorRef = useRef<VimRaceEditorHandle>(null);
   const timerRef = useRef<number>(0);
-  
+
   // Practice session state
   const [isReady, setIsReady] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -443,15 +396,16 @@ const VimEditor: React.FC = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
   const [finalTime, setFinalTime] = useState(0);
-  
+  const [editorReadyTick, setEditorReadyTick] = useState(0);
+
   // Current task derived from state
   const currentTask = tasks[taskProgress] || null;
-  
+
   // Use refs to avoid stale closures
   const tasksRef = useRef<Task[]>([]);
   const taskProgressRef = useRef(0);
   const isTaskCompleteRef = useRef(false);
-  
+
   // Keep refs in sync with state
   useEffect(() => {
     tasksRef.current = tasks;
@@ -482,34 +436,11 @@ const VimEditor: React.FC = () => {
     setIsReady(true);
   }, []);
 
-  // Fetch a new practice session
-  const fetchPracticeSession = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/task/practice`);
-      const data = await response.json();
-      
-      setTasks(data.tasks);
-      setNumTasks(data.numTasks);
-      setTaskProgress(0);
-      setIsTaskComplete(false);
-      setIsSessionComplete(false);
-      setSessionStartTime(Date.now());
-      setElapsedTime(0);
-      setFinalTime(0);
-      
-      // Update editor for first task
-      if (viewRef.current && data.tasks.length > 0) {
-        const firstTask = data.tasks[0];
-        setupTaskInEditor(viewRef.current, firstTask);
-        viewRef.current.focus();
-      }
-    } catch (error) {
-      console.error('Failed to fetch practice session:', error);
-    }
-  }, []);
+  // Setup a task in the editor (replace doc + configure highlights)
+  const setupTaskInEditor = useCallback((task: Task) => {
+    const view = editorRef.current?.view;
+    if (!view) return;
 
-  // Setup a task in the editor
-  const setupTaskInEditor = useCallback((view: EditorView, task: Task) => {
     view.dispatch({
       changes: {
         from: 0,
@@ -518,7 +449,7 @@ const VimEditor: React.FC = () => {
       },
       effects: allowReset.of(true),
     });
-    
+
     if (task.type === 'navigate') {
       view.dispatch({
         effects: [
@@ -538,15 +469,50 @@ const VimEditor: React.FC = () => {
     }
   }, []);
 
+  // Fetch a new practice session (state only — task setup handled by effect)
+  const fetchPracticeSession = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE}/api/task/practice`);
+      const data = await response.json();
+
+      setTasks(data.tasks);
+      setNumTasks(data.numTasks);
+      setTaskProgress(0);
+      setIsTaskComplete(false);
+      isTaskCompleteRef.current = false;
+      setIsSessionComplete(false);
+      setSessionStartTime(Date.now());
+      setElapsedTime(0);
+      setFinalTime(0);
+    } catch (error) {
+      console.error('Failed to fetch practice session:', error);
+    }
+  }, []);
+
+  // Trigger initial fetch when user clicks Ready
+  useEffect(() => {
+    if (isReady) {
+      fetchPracticeSession();
+    }
+  }, [isReady, fetchPracticeSession]);
+
+  // Set up the first task when tasks are loaded (or reloaded on restart)
+  useEffect(() => {
+    if (tasks.length === 0 || taskProgress !== 0) return;
+    setupTaskInEditor(tasks[0]);
+    editorRef.current?.view?.focus();
+  }, [tasks, taskProgress, setupTaskInEditor, editorReadyTick]);
+
   // Advance to next task
   const advanceToNextTask = useCallback(() => {
     const nextProgress = taskProgressRef.current + 1;
-    
+
     if (nextProgress >= tasksRef.current.length) {
       setIsSessionComplete(true);
       setFinalTime(elapsedTime);
-      if (viewRef.current) {
-        viewRef.current.dispatch({
+      const view = editorRef.current?.view;
+      if (view) {
+        view.dispatch({
           effects: [
             setTargetPosition.of(null),
             setDeleteMode.of(false),
@@ -555,29 +521,32 @@ const VimEditor: React.FC = () => {
       }
       return;
     }
-    
+
     setTaskProgress(nextProgress);
     setIsTaskComplete(false);
-    
+    isTaskCompleteRef.current = false;
+
     const nextTask = tasksRef.current[nextProgress];
-    if (viewRef.current && nextTask) {
-      setupTaskInEditor(viewRef.current, nextTask);
-      viewRef.current.focus();
+    if (nextTask) {
+      setupTaskInEditor(nextTask);
+      editorRef.current?.view?.focus();
     }
   }, [setupTaskInEditor, elapsedTime]);
 
   // Handle task completion
   const handleTaskComplete = useCallback(() => {
+    isTaskCompleteRef.current = true; // Set ref synchronously before blur
     setIsTaskComplete(true);
-    
-    if (viewRef.current) {
-      viewRef.current.dispatch({
+
+    const view = editorRef.current?.view;
+    if (view) {
+      view.dispatch({
         effects: [
           setTargetPosition.of(null),
           setDeleteMode.of(false),
         ],
       });
-      viewRef.current.contentDOM.blur();
+      view.contentDOM.blur();
     }
   }, []);
 
@@ -599,12 +568,7 @@ const VimEditor: React.FC = () => {
   const toggleRelativeLineNumbers = useCallback(() => {
     const newValue = !relativeLineNumbers;
     setRelativeLineNumbers(newValue);
-    
-    if (viewRef.current) {
-      viewRef.current.dispatch({
-        effects: lineNumbersCompartment.reconfigure(createLineNumbersExtension(newValue)),
-      });
-    }
+    editorRef.current?.setRelativeLineNumbers(newValue);
   }, [relativeLineNumbers]);
 
   // Handle cursor position changes (for navigate tasks)
@@ -612,7 +576,7 @@ const VimEditor: React.FC = () => {
     const currentTasks = tasksRef.current;
     const progress = taskProgressRef.current;
     const completed = isTaskCompleteRef.current;
-    
+
     const task = currentTasks[progress];
     if (task && task.type === 'navigate' && !completed) {
       if (offset === task.targetOffset) {
@@ -626,7 +590,7 @@ const VimEditor: React.FC = () => {
     const currentTasks = tasksRef.current;
     const progress = taskProgressRef.current;
     const completed = isTaskCompleteRef.current;
-    
+
     const task = currentTasks[progress];
     if (task && task.type === 'delete' && !completed) {
       if (newText === task.expectedResult) {
@@ -635,86 +599,9 @@ const VimEditor: React.FC = () => {
     }
   }, [handleTaskComplete]);
 
-  // Document change listener for delete task validation
-  const documentChangeListener = React.useMemo(
-    () => EditorView.updateListener.of((update) => {
-      if (update.docChanged) {
-        const newText = update.state.doc.toString();
-        handleEditorChange(newText);
-      }
-    }),
-    [handleEditorChange]
-  );
-
-  // Initialize editor only after user is ready
-  useEffect(() => {
-    if (!isReady) return;
-    
-    if (editorRef.current && !viewRef.current) {
-      viewRef.current = new EditorView({
-        doc: "// Loading practice session...",
-        parent: editorRef.current,
-        extensions: [
-          vim(),
-          cpp(),
-          oneDark,
-          readOnlyNavigation,
-          documentChangeListener,
-          ...targetHighlightExtension,
-          cursorTracker(handleCursorChange),
-          lineNumbersCompartment.of(createLineNumbersExtension(true)),
-          drawSelection(),
-          highlightActiveLine(),
-          highlightActiveLineGutter(),
-          keymap.of([
-            ...defaultKeymap,
-            ...searchKeymap,
-          ]),
-          EditorView.theme({
-            '&': {
-              fontSize: '14px',
-              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-            },
-            '.cm-content': {
-              caretColor: colors.primary,
-            },
-            '.cm-cursor, .cm-dropCursor': {
-              borderLeftColor: colors.primary,
-              borderLeftWidth: '2px',
-            },
-            '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-              backgroundColor: `${colors.primary}30`,
-            },
-            '.cm-activeLine': {
-              backgroundColor: `${colors.primary}10`,
-            },
-            '.cm-activeLineGutter': {
-              backgroundColor: `${colors.primary}15`,
-            },
-            '.cm-gutters': {
-              backgroundColor: colors.bgCard,
-              borderRight: `1px solid ${colors.border}`,
-            },
-            '.cm-lineNumbers .cm-gutterElement': {
-              color: colors.textMuted,
-            },
-            '.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter': {
-              color: colors.primaryLight,
-            },
-          }),
-        ]
-      });
-
-      fetchPracticeSession();
-    }
-
-    return () => {
-      if (viewRef.current) {
-        viewRef.current.destroy();
-        viewRef.current = null;
-      }
-    };
-  }, [isReady, fetchPracticeSession, handleCursorChange, documentChangeListener]);
+  const handleEditorReady = useCallback(() => {
+    setEditorReadyTick((prev) => prev + 1);
+  }, []);
 
   // Progress percentage
   const progressPercent = numTasks > 0 ? ((taskProgress + (isTaskComplete ? 1 : 0)) / numTasks) * 100 : 0;
@@ -829,21 +716,28 @@ const VimEditor: React.FC = () => {
                   Editor
                 </div>
                 <div style={styles.editorWrapper}>
-                  <div ref={editorRef} />
+                  <VimRaceEditor
+                    ref={editorRef}
+                    initialDoc="// Loading practice session..."
+                    onReady={handleEditorReady}
+                    onCursorChange={handleCursorChange}
+                    onDocChange={handleEditorChange}
+                    shouldAllowBlur={() => isTaskCompleteRef.current}
+                  />
                 </div>
               </div>
 
               {/* Sidebar */}
               <div style={styles.sidebar}>
                 <div style={styles.sidebarTitle}>Progress</div>
-                
+
                 <div style={styles.progressRow}>
                   <span>Tasks Completed</span>
                   <span style={{ color: colors.primaryLight }}>
                     {taskProgress + (isTaskComplete ? 1 : 0)}/{numTasks}
                   </span>
                 </div>
-                
+
                 <div style={styles.progressRow}>
                   <span>Time</span>
                   <span style={{ color: colors.warning }}>
@@ -877,4 +771,4 @@ const VimEditor: React.FC = () => {
   );
 };
 
-export default VimEditor;
+export default PracticeEditor;

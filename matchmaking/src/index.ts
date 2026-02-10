@@ -1,6 +1,6 @@
 import 'dotenv/config';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { IncomingMessage } from 'http';
 import { randomUUID } from 'crypto';
 import { Matchmaker } from './matchmaker.js';
 import type { ClientMessage, ServerMessage, QueuedPlayer } from './types.js';
@@ -8,6 +8,7 @@ import { verifyToken } from './auth.js';
 import { rateLimiter } from './rateLimit.js';
 import { connectionLimiter } from './connectionLimiter.js';
 import { validatePlayerName } from './validation.js';
+import { generatePracticeSession } from './practice/tasks.js';
 
 // Track connection metadata
 const connectionMeta = new Map<string, { ip: string }>();
@@ -46,7 +47,44 @@ const matchmaker = new Matchmaker({
   playersPerMatch: PLAYERS_PER_MATCH,
 });
 
-const wss = new WebSocketServer({ port: PORT });
+// CORS headers for HTTP responses
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+// Create HTTP server to handle both HTTP requests and WebSocket upgrades
+const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
+  }
+
+  // Health check endpoint
+  if (req.url === '/' && req.method === 'GET') {
+    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', service: 'vim-racing-matchmaking' }));
+    return;
+  }
+
+  // Practice session endpoint
+  if (req.url === '/api/task/practice' && req.method === 'GET') {
+    const session = generatePracticeSession(10);
+    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(session));
+    return;
+  }
+
+  // 404 for unknown routes
+  res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+// Create WebSocket server attached to HTTP server
+const wss = new WebSocketServer({ server });
 
 wss.on('connection', (socket, req) => {
   const connectionId = randomUUID().slice(0, 8);
@@ -161,8 +199,10 @@ process.on('SIGTERM', () => {
   console.log('🛑 Received SIGTERM, shutting down...');
   matchmaker.stop();
   wss.close(() => {
-    console.log('👋 Server closed');
-    process.exit(0);
+    server.close(() => {
+      console.log('👋 Server closed');
+      process.exit(0);
+    });
   });
 });
 
@@ -170,15 +210,21 @@ process.on('SIGINT', () => {
   console.log('🛑 Received SIGINT, shutting down...');
   matchmaker.stop();
   wss.close(() => {
-    console.log('👋 Server closed');
-    process.exit(0);
+    server.close(() => {
+      console.log('👋 Server closed');
+      process.exit(0);
+    });
   });
 });
 
-// Start
-matchmaker.start();
-console.log(`🚀 Matchmaking server running on ws://localhost:${PORT}`);
-console.log(`   Hathora App ID: configured`);
-console.log(`   Players per match: ${PLAYERS_PER_MATCH}`);
-console.log(`   Auth required: ${REQUIRE_AUTH}`);
+// Start HTTP server (WebSocket server is attached to it)
+server.listen(PORT, () => {
+  matchmaker.start();
+  console.log(`🚀 Matchmaking server running on http://localhost:${PORT}`);
+  console.log(`   WebSocket: ws://localhost:${PORT}`);
+  console.log(`   Practice API: http://localhost:${PORT}/api/task/practice`);
+  console.log(`   Hathora App ID: configured`);
+  console.log(`   Players per match: ${PLAYERS_PER_MATCH}`);
+  console.log(`   Auth required: ${REQUIRE_AUTH}`);
+});
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import VimEditor from './pages/vim-editor';
+import PracticeEditor from './pages/practice';
 import MultiplayerGame from './pages/multiplayer';
 import './App.css';
 
@@ -346,10 +346,10 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/practice" element={<VimEditor />} />
+        <Route path="/practice" element={<PracticeEditor />} />
         <Route path="/multiplayer" element={<MultiplayerGame />} />
         {/* Keep old route for backwards compatibility */}
-        <Route path="/vim-editor" element={<VimEditor />} />
+        <Route path="/vim-editor" element={<PracticeEditor />} />
       </Routes>
     </Router>
   );
