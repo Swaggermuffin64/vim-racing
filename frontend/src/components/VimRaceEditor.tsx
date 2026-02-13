@@ -7,7 +7,7 @@ import {
 } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
 import { searchKeymap } from "@codemirror/search";
-import { vim, Vim } from '@replit/codemirror-vim';
+import { vim, Vim, getCM } from '@replit/codemirror-vim';
 import { oneDark } from '@codemirror/theme-one-dark';
 
 import { targetHighlightExtension } from '../extensions/targetHighlight';
@@ -44,10 +44,6 @@ export const editorColors = {
 
 const lineNumbersCompartment = new Compartment();
 
-// Keys that enter insert mode — blocked because tasks only need navigation/deletion.
-// Mapped in normal mode only so text objects (e.g. di{, da() still work.
-const INSERT_MODE_KEYS = ['i', 'I', 'a', 'A', 'o', 'O', 's', 'S', 'c', 'C', 'R'];
-
 /** Block all mouse interaction — the editor is keyboard-only. */
 const disableMouseInteraction = EditorView.domEventHandlers({
   mousedown: () => true,
@@ -56,6 +52,7 @@ const disableMouseInteraction = EditorView.domEventHandlers({
   contextmenu: () => true,
   selectstart: () => true,
 });
+
 
 function createLineNumbersExtension(relative: boolean) {
   return lineNumbers({
@@ -139,7 +136,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
         doc: initialDoc,
         parent: containerRef.current,
         extensions: [
-          vim(),
+          vim({ status: true }),
           cpp(),
           oneDark,
           readOnlyNavigation,
@@ -190,14 +187,43 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
       viewRef.current = view;
       onReady?.(view);
 
-      // Block insert-mode keys in normal mode (no-op instead of entering insert).
-      INSERT_MODE_KEYS.forEach(k => Vim.map(k, '<Nop>', 'normal'));
+      // ---------------------------------------------------------------
+      // Escape key: intercept at the DOM level so the browser never
+      // gets to blur the contenteditable element.  Route the key
+      // through the Vim API so insert→normal transitions always work.
+      // ---------------------------------------------------------------
+      const handleEscapeKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' || (e.key === '[' && e.ctrlKey)) {
+          e.preventDefault();
+          const cm = getCM(view);
+          if (cm?.state?.vim) {
+            try {
+              Vim.handleKey(cm, '<Esc>', 'user');
+            } catch {
+              cm.state.vim.insertMode = false;
+            }
+          }
+        }
+      };
+      view.contentDOM.addEventListener('keydown', handleEscapeKey);
 
       // Refocus the editor whenever it loses focus unintentionally.
       // Parents opt into allowing blur via the shouldAllowBlur callback.
+      // This also handles Escape-from-Vimium which blurs without a keydown.
       const handleBlur = () => {
         const allowBlur = shouldAllowBlurRef.current;
         if (!allowBlur || !allowBlur()) {
+          // Force vim back to normal mode — Vimium (or similar browser
+          // extensions) can steal Escape, blur the editor, and leave vim
+          // stuck in insert mode since the keydown never reached the page.
+          const cm = getCM(view);
+          if (cm?.state?.vim?.insertMode) {
+            try {
+              Vim.handleKey(cm, '<Esc>', 'user');
+            } catch {
+              cm.state.vim.insertMode = false;
+            }
+          }
           requestAnimationFrame(() => viewRef.current?.focus());
         }
       };
@@ -207,8 +233,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
       view.focus();
 
       return () => {
-        // Restore default insert-mode key behavior for any future editors.
-        INSERT_MODE_KEYS.forEach(k => Vim.unmap(k, 'normal'));
+        view.contentDOM.removeEventListener('keydown', handleEscapeKey);
         view.contentDOM.removeEventListener('blur', handleBlur);
         view.destroy();
         viewRef.current = null;

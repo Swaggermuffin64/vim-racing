@@ -205,6 +205,7 @@ const MultiplayerGame: React.FC = () => {
   const editorRef = useRef<VimRaceEditorHandle>(null);
   const timerRef = useRef<number>(0);
   const [elapsedTime, setElapsedTime] = React.useState(0);
+  const [editorReadyTick, setEditorReadyTick] = React.useState(0);
 
   // Stable refs for callbacks used in CodeMirror extensions
   const sendCursorMoveRef = useRef(sendCursorMove);
@@ -222,6 +223,11 @@ const MultiplayerGame: React.FC = () => {
   // Handle document changes (send new text to server for validation)
   const handleDocChange = useCallback((text: string) => {
     sendEditorTextRef.current(text);
+  }, []);
+
+  const handleEditorReady = useCallback(() => {
+    currentTaskIdRef.current = null;
+    setEditorReadyTick((prev) => prev + 1);
   }, []);
 
   // Timer effect
@@ -253,16 +259,16 @@ const MultiplayerGame: React.FC = () => {
     if (!view || !gameState.task.id) return;
     if (currentTaskIdRef.current === gameState.task.id) return;
 
-    // Replace doc only for subsequent tasks (the first one is set via initialDoc)
-    if (currentTaskIdRef.current !== null) {
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: gameState.task.codeSnippet,
-        },
-      });
-    }
+    // Replace doc for every new task. allowReset bypasses readOnlyNavigation
+    // so full-snippet swaps are always permitted.
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: gameState.task.codeSnippet,
+      },
+      effects: allowReset.of(true),
+    });
     currentTaskIdRef.current = gameState.task.id;
 
     // Set up highlights based on task type
@@ -283,15 +289,14 @@ const MultiplayerGame: React.FC = () => {
         ],
       });
     }
-  }, [gameState.task]);
+    view.focus();
+  }, [gameState.task, editorReadyTick]);
 
   // Handle validation failure — reset editor to original task text
   useEffect(() => {
     if (!gameState.shouldResetEditor || !gameState.task.id) return;
     const view = editorRef.current?.view;
     if (!view) return;
-
-    console.log("resetting editor");
 
     view.dispatch({
       changes: {
@@ -414,6 +419,7 @@ const MultiplayerGame: React.FC = () => {
                   <VimRaceEditor
                     ref={editorRef}
                     initialDoc={gameState.task.codeSnippet}
+                    onReady={handleEditorReady}
                     onCursorChange={handleCursorChange}
                     onDocChange={handleDocChange}
                   />
