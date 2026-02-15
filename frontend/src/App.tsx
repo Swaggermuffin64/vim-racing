@@ -2,40 +2,9 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import PracticeEditor from './pages/practice';
 import MultiplayerGame from './pages/multiplayer';
+import About from './pages/about';
+import { colors } from './theme';
 import './App.css';
-
-// Shared color palette - matching race UI
-const colors = {
-  bgDark: '#0a0a0f',
-  bgCard: '#12121a',
-  bgGradientStart: '#0f172a',
-  bgGradientEnd: '#1e1b4b',
-  
-  // Primary (cyan) - matches navigate highlight
-  primary: '#06b6d4',
-  primaryLight: '#22d3ee',
-  primaryGlow: 'rgba(6, 182, 212, 0.3)',
-  
-  // Secondary (magenta) - matches delete highlight
-  secondary: '#ec4899',
-  secondaryLight: '#f472b6',
-  secondaryGlow: 'rgba(236, 72, 153, 0.3)',
-  
-  // Success (emerald)
-  success: '#10b981',
-  successLight: '#34d399',
-  successGlow: 'rgba(16, 185, 129, 0.3)',
-  
-  // Warning (amber)
-  warning: '#fbbf24',
-  
-  textPrimary: '#f1f5f9',
-  textSecondary: '#94a3b8',
-  textMuted: '#64748b',
-  
-  border: '#334155',
-  borderLight: '#475569',
-};
 
 const homeStyles: Record<string, React.CSSProperties> = {
   container: {
@@ -51,6 +20,9 @@ const homeStyles: Record<string, React.CSSProperties> = {
     padding: '16px 32px',
     background: '#000000',
     flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   topBannerTitle: {
     fontSize: '20px',
@@ -58,6 +30,20 @@ const homeStyles: Record<string, React.CSSProperties> = {
     color: colors.textPrimary,
     fontFamily: '"JetBrains Mono", monospace',
     margin: 0,
+  },
+  navLinks: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '32px',
+  },
+  navLink: {
+    fontSize: '15px',
+    fontWeight: 600,
+    color: colors.textPrimary,
+    fontFamily: '"JetBrains Mono", monospace',
+    textDecoration: 'none',
+    textTransform: 'uppercase' as const,
+    transition: 'color 0.2s ease',
   },
   mainContent: {
     flex: 1,
@@ -183,19 +169,6 @@ const homeStyles: Record<string, React.CSSProperties> = {
     marginTop: '16px',
     textTransform: 'uppercase' as const,
   },
-  footer: {
-    marginTop: '64px',
-    display: 'flex',
-    gap: '32px',
-    color: colors.textMuted,
-    fontSize: '13px',
-    fontFamily: '"JetBrains Mono", monospace',
-  },
-  footerLink: {
-    color: colors.textMuted,
-    textDecoration: 'none',
-    transition: 'color 0.2s ease',
-  },
 };
 
 function Home() {
@@ -204,6 +177,19 @@ function Home() {
       {/* Top Banner */}
       <div style={homeStyles.topBanner}>
         <div style={homeStyles.topBannerTitle}>VIM_GYM</div>
+        <div style={homeStyles.navLinks}>
+          <Link to="/about" style={homeStyles.navLink}>
+           ABOUT
+          </Link>
+          <a
+            href="https://buymeacoffee.com/jacksonfisk"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={homeStyles.navLink}
+          >
+           SUPPORT 
+          </a>
+        </div>
       </div>
 
       <div style={homeStyles.mainContent}>
@@ -335,6 +321,7 @@ function Home() {
               </div>
             </Link>
           </div>
+
         </div>
       </div>
     </div>
@@ -346,6 +333,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
         <Route path="/practice" element={<PracticeEditor />} />
         <Route path="/multiplayer" element={<MultiplayerGame />} />
         {/* Keep old route for backwards compatibility */}

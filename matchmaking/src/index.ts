@@ -5,10 +5,53 @@ import { randomUUID } from 'crypto';
 import { Matchmaker } from './matchmaker.js';
 import type { ClientMessage, ServerMessage, QueuedPlayer } from './types.js';
 import { verifyToken } from './auth.js';
-import { rateLimiter } from './rateLimit.js';
+import { RateLimiter, rateLimiter } from './rateLimit.js';
 import { connectionLimiter } from './connectionLimiter.js';
 import { validatePlayerName } from './validation.js';
 import { generatePracticeSession } from './practice/tasks.js';
+
+// --- CORS Configuration ---
+// Allowed origins for CORS - matches the backend's approach
+const CORS_ORIGINS: string[] = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map(url => url.trim()) : []),
+];
+
+/**
+ * Check if a request origin is allowed by CORS policy.
+ * Returns the matched origin string, or null if not allowed.
+ */
+function getAllowedOrigin(req: IncomingMessage): string | null {
+  const origin = req.headers.origin;
+  if (!origin) return null;
+  return CORS_ORIGINS.includes(origin) ? origin : null;
+}
+
+/**
+ * Build CORS headers for a given request.
+ * Only reflects the origin back if it's in the allowlist.
+ */
+function getCorsHeaders(req: IncomingMessage): Record<string, string> {
+  const origin = getAllowedOrigin(req);
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+  if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
+  return headers;
+}
+
+// --- HTTP Rate Limiting ---
+// Separate rate limiter for HTTP endpoints, keyed by client IP
+const httpRateLimiter = new RateLimiter({
+  maxRequests: 60,       // 60 requests per minute
+  windowMs: 60000,
+  blockDurationMs: 60000, // block for 1 minute if exceeded
+});
 
 // Track connection metadata
 const connectionMeta = new Map<string, { ip: string }>();
@@ -49,39 +92,42 @@ const matchmaker = new Matchmaker({
   playersPerMatch: PLAYERS_PER_MATCH,
 });
 
-// CORS headers for HTTP responses
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
 // Create HTTP server to handle both HTTP requests and WebSocket upgrades
 const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const corsHeaders = getCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, CORS_HEADERS);
+    res.writeHead(204, corsHeaders);
     res.end();
     return;
   }
 
-  // Health check endpoint
+  // Health check endpoint (exempt from rate limiting)
   if (req.url === '/' && req.method === 'GET') {
-    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'ok', service: 'vim-racing-matchmaking' }));
+    return;
+  }
+
+  // Apply HTTP rate limiting to all non-health-check routes
+  const clientIp = getClientIp(req);
+  if (!httpRateLimiter.check(clientIp)) {
+    res.writeHead(429, { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' });
+    res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
     return;
   }
 
   // Practice session endpoint
   if (req.url === '/api/task/practice' && req.method === 'GET') {
     const session = generatePracticeSession(10);
-    res.writeHead(200, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
     res.end(JSON.stringify(session));
     return;
   }
 
   // 404 for unknown routes
-  res.writeHead(404, { ...CORS_HEADERS, 'Content-Type': 'application/json' });
+  res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
@@ -228,5 +274,6 @@ server.listen(PORT, HOST, () => {
   console.log(`   Hathora App ID: configured`);
   console.log(`   Players per match: ${PLAYERS_PER_MATCH}`);
   console.log(`   Auth required: ${REQUIRE_AUTH}`);
+  console.log(`   CORS origins: ${CORS_ORIGINS.join(', ')}`);
 });
 
