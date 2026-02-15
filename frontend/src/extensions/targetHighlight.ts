@@ -18,6 +18,21 @@ const deleteRangeMark = Decoration.mark({
 });
 
 /**
+ * Gutter marker that renders a visible ↵ glyph for newline characters that
+ * are the sole highlighted character on their line.
+ */
+class NewlineGlyphMarker extends GutterMarker {
+  toDOM() {
+    const span = document.createElement('span');
+    span.className = 'cm-newline-glyph';
+    span.textContent = '↵';
+    return span;
+  }
+}
+
+const newlineGlyphMarker = new NewlineGlyphMarker();
+
+/**
  * Gutter marker for lines that will be merged (after a newline in the target range)
  */
 class MergeLineMarker extends GutterMarker {
@@ -107,23 +122,100 @@ function buildMergeLineMarkers(
 }
 
 /**
- * Gutter extension that shows merge line markers (sits next to line numbers)
+ * State field to track which lines should show the ↵ glyph in the gutter.
+ * A glyph appears when a \n is the only highlighted character on its line.
  */
-export const mergeLineGutter = gutter({
-  class: 'cm-merge-line-gutter',
-  lineMarker: (view, line) => {
-    const markers = view.state.field(mergeLineState);
-    let hasMarker = false;
-    markers.between(line.from, line.from + 1, () => { hasMarker = true; });
-    return hasMarker ? mergeLineMarker : null;
+const newlineGlyphState = StateField.define<RangeSet<GutterMarker>>({
+  create: () => RangeSet.empty,
+  update(markers, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setTargetRange)) {
+        if (effect.value === null) return RangeSet.empty;
+        const { from, to } = effect.value;
+        return buildNewlineGlyphMarkers(tr.state.doc, from, to);
+      }
+      if (effect.is(setTargetPosition)) return RangeSet.empty;
+    }
+
+    // Always re-evaluate on doc changes — the glyph may become needed after
+    // the user deletes visible characters, leaving only a \n on the line.
+    if (tr.docChanged) {
+      let hasRange = false;
+      let from = 0, to = 0;
+      const decorations = tr.state.field(targetHighlightField, false);
+      if (decorations) {
+        decorations.between(0, tr.state.doc.length, (f, t, deco) => {
+          if (deco.spec.class === 'cm-delete-highlight') {
+            hasRange = true;
+            from = f;
+            to = t;
+          }
+        });
+      }
+      if (hasRange && from < to) {
+        return buildNewlineGlyphMarkers(tr.state.doc, from, to);
+      }
+      return markers;
+    }
+
+    return markers;
   },
 });
 
 /**
- * Build decorations for a delete range (just the highlight, no line indicators)
+ * Build gutter markers for newlines that are the sole highlighted character
+ * on their line. The marker is placed on the line the \n terminates.
+ */
+function buildNewlineGlyphMarkers(
+  doc: { sliceString: (from: number, to: number) => string; lineAt: (pos: number) => { from: number; to: number } },
+  from: number,
+  to: number,
+): RangeSet<GutterMarker> {
+  const markers: Array<{ from: number; marker: GutterMarker }> = [];
+  const text = doc.sliceString(from, to);
+  let searchPos = 0;
+
+  while ((searchPos = text.indexOf('\n', searchPos)) !== -1) {
+    const newlinePos = from + searchPos;
+    const line = doc.lineAt(newlinePos);
+    // Overlap of the delete range with this line's visible content
+    const highlightStart = Math.max(from, line.from);
+    const highlightEnd = Math.min(to, line.to);
+    if (highlightStart >= highlightEnd) {
+      markers.push({ from: line.from, marker: newlineGlyphMarker });
+    }
+    searchPos++;
+  }
+
+  const sorted = markers.sort((a, b) => a.from - b.from);
+  return RangeSet.of(sorted.map(m => m.marker.range(m.from)));
+}
+
+/**
+ * Gutter that houses both the ↵ glyph and the merge-line bar.
+ * The glyph takes priority if both would appear on the same line.
+ */
+const newlineIndicatorGutter = gutter({
+  class: 'cm-newline-gutter',
+  lineMarker: (view, line) => {
+    const glyphs = view.state.field(newlineGlyphState);
+    let hasGlyph = false;
+    glyphs.between(line.from, line.from + 1, () => { hasGlyph = true; });
+    if (hasGlyph) return newlineGlyphMarker;
+
+    const merges = view.state.field(mergeLineState);
+    let hasMerge = false;
+    merges.between(line.from, line.from + 1, () => { hasMerge = true; });
+    if (hasMerge) return mergeLineMarker;
+
+    return null;
+  },
+});
+
+/**
+ * Build decorations for a delete range (just the highlight mark).
  */
 function buildDeleteDecorations(from: number, to: number): DecorationSet {
-  // Just add the main highlight
   return RangeSet.of([deleteRangeMark.range(from, to)]);
 }
 
@@ -202,19 +294,35 @@ export const targetHighlightTheme = EditorView.baseTheme({
     backgroundColor: 'rgba(236, 72, 153, 0.35)',
     outline: '2px solid #ec4899',
   },
-  // Merge line gutter - narrow column next to line numbers
-  '.cm-merge-line-gutter': {
-    width: '4px',
+  // Newline indicator gutter (houses both ↵ glyphs and merge bars)
+  '.cm-newline-gutter': {
+    width: '22px',
     backgroundColor: 'transparent',
   },
-  '.cm-merge-line-gutter .cm-gutterElement': {
+  '.cm-newline-gutter .cm-gutterElement': {
     padding: '0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  // Marker that indicates this line will be merged (colored bar)
+  // ↵ glyph shown when a newline is the only highlighted char on the line
+  '.cm-newline-glyph': {
+    color: '#ec4899',
+    backgroundColor: 'rgba(236, 72, 153, 0.25)',
+    border: '1px solid rgba(236, 72, 153, 0.6)',
+    borderRadius: '3px',
+    padding: '0 2px',
+    fontSize: '0.8em',
+    fontWeight: 'bold',
+    fontFamily: 'monospace',
+    lineHeight: '1',
+  },
+  // Merge bar shown on lines that will be joined
   '.cm-merge-line-marker': {
-    width: '4px',
+    width: '3px',
     height: '100%',
     backgroundColor: '#ec4899',
+    borderRadius: '1px',
   },
 });
 
@@ -222,7 +330,8 @@ export const targetHighlightTheme = EditorView.baseTheme({
 export const targetHighlightExtension = [
   targetHighlightField,
   mergeLineState,
-  mergeLineGutter,
+  newlineGlyphState,
+  newlineIndicatorGutter,
   targetHighlightTheme,
 ];
 
