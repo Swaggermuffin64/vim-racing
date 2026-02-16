@@ -1,6 +1,6 @@
 // Shared multiplayer types
 import type { PositionTask, Task } from "../types.js";
-
+//NEED TO SYNC MAX PLAYERS WITH MATCHMAKING SERVICE
 export const MAX_PLAYERS_PER_ROOM = 2;
 
 export interface Player {

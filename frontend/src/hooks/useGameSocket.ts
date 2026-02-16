@@ -9,13 +9,6 @@ const LOCAL_SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3
 const HATHORA_APP_ID = import.meta.env.VITE_HATHORA_APP_ID || '';
 const MATCHMAKING_URL = import.meta.env.VITE_MATCHMAKING_URL || 'ws://localhost:3002';
 
-console.log('🔧 Config:', {
-  USE_HATHORA,
-  HATHORA_APP_ID: HATHORA_APP_ID ? `${HATHORA_APP_ID.substring(0, 20)}...` : '(not set)',
-  LOCAL_SOCKET_URL,
-  MATCHMAKING_URL,
-});
-
 // Lazily import Hathora SDK only when needed
 let hathoraClientPromise: Promise<any> | null = null;
 let playerTokenPromise: Promise<string> | null = null;
@@ -51,7 +44,6 @@ const getPlayerToken = async (): Promise<string | null> => {
       const client = await getHathoraClient();
       if (!client) throw new Error('Hathora client not initialized');
       const auth = await client.authV1.loginAnonymous(HATHORA_APP_ID);
-      console.log('🔑 Obtained Hathora auth token');
       return auth.token;
     })();
   }
@@ -102,11 +94,15 @@ export function useGameSocket(): UseGameSocketReturn {
   
   // Store player name for use after matchmaking connects us to a room
   const pendingPlayerNameRef = useRef<string | null>(null);
+  
+  // Tracks whether the current quick match flow has been cancelled.
+  // Checked by async operations (connectToMatchedRoom) to bail out if
+  // the user cancelled while we were awaiting.
+  const quickMatchCancelledRef = useRef(false);
 
   // Setup socket event listeners
   const setupSocketListeners = useCallback((socket: Socket) => {
     socket.on('connect', () => {
-      console.log('🔌 Connected to server, socket id:', socket.id);
       setIsConnected(true);
       setIsConnecting(false);
       setGameState(prev => ({
@@ -116,13 +112,11 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('disconnect', () => {
-      console.log('🔌 Disconnected from server');
       setIsConnected(false);
     });
 
     // Room events
     socket.on('room:created', ({ roomId, player }) => {
-      console.log('🏠 Room created:', roomId);
       setGameState(prev => ({
         ...prev,
         roomId,
@@ -132,7 +126,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('room:joined', ({ roomId, players }) => {
-      console.log('🚪 Joined room:', roomId);
       setGameState(prev => ({
         ...prev,
         roomId,
@@ -142,7 +135,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('room:player_joined', ({ player }) => {
-      console.log('👤 Player joined:', player.name);
       setGameState(prev => ({
         ...prev,
         players: [...prev.players, player],
@@ -150,7 +142,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('room:player_left', ({ playerId }) => {
-      console.log('👋 Player left:', playerId);
       setGameState(prev => ({
         ...prev,
         players: prev.players.filter(p => p.id !== playerId),
@@ -158,7 +149,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('room:player_ready', ({ playerId }) => {
-      console.log('👤 Player ready:', playerId);
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
@@ -168,7 +158,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('room:reset', ({ players }) => {
-      console.log('🔄 Room reset for new game');
       setGameState(prev => ({
         ...prev,
         roomState: 'waiting',
@@ -189,7 +178,6 @@ export function useGameSocket(): UseGameSocketReturn {
 
     // Game events
     socket.on('game:countdown', ({ seconds }) => {
-      console.log('⏱️ Countdown:', seconds);
       setGameState(prev => ({
         ...prev,
         roomState: 'countdown',
@@ -198,7 +186,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('game:start', ({ startTime, initialTask, num_tasks }) => {
-      console.log('🏁 Race started!', initialTask);
       setGameState(prev => ({
         ...prev,
         roomState: 'racing',
@@ -210,8 +197,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask }) => {
-      console.log('Player', playerId, 'finished task', taskProgress);
-      console.log('New task:', JSON.stringify(newTask, null, 2));
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
@@ -222,7 +207,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('game:opponent_finished_task', ({ playerId, taskProgress }) => {
-      console.log('Player', playerId, 'finished task', taskProgress);
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
@@ -231,8 +215,7 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
-    socket.on('game:player_finished', ({ playerId, time, position }) => {
-      console.log('🎉 Player finished:', playerId, 'Position:', position);
+    socket.on('game:player_finished', ({ playerId, time }) => {
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
@@ -244,7 +227,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('game:complete', ({ rankings }) => {
-      console.log('🏆 Race complete:', rankings);
       setGameState(prev => ({
         ...prev,
         roomState: 'finished',
@@ -254,7 +236,6 @@ export function useGameSocket(): UseGameSocketReturn {
     });
 
     socket.on('game:validation_failed', () => {
-      console.log('❌ Validation failed, flagging editor reset');
       setGameState(prev => ({
         ...prev,
         shouldResetEditor: true,
@@ -301,8 +282,6 @@ export function useGameSocket(): UseGameSocketReturn {
     // First check room status to help debug issues
     try {
       const roomInfo = await hathoraClient.roomsV2.getRoomInfo(roomId);
-      console.log('🔍 Room status:', roomInfo.status, 'for room:', roomId);
-      
       if (roomInfo.status === 'destroyed') {
         throw new Error('Room was destroyed - server may have crashed on startup');
       }
@@ -311,26 +290,17 @@ export function useGameSocket(): UseGameSocketReturn {
         throw new Error('Room is suspended');
       }
     } catch (err: any) {
-      // If we can't get room info, still try connection info
-      console.log('⚠️ Could not get room info:', err?.message);
     }
 
     const connectionInfo = await hathoraClient.roomsV2.getConnectionInfo(roomId);
     
     if (connectionInfo.status !== 'active' || !connectionInfo.exposedPort) {
-      console.log('⏳ Room status:', connectionInfo.status, '- waiting for active state');
       throw new Error(`Room not ready yet (status: ${connectionInfo.status})`);
     }
 
     const { host, port } = connectionInfo.exposedPort;
-    console.log('✅ Got connection info:', { host, port });
     return `https://${host}:${port}`;
   }, []);
-
-  // Debug: Log gameState changes
-  useEffect(() => {
-    console.log('🎮 GameState updated:', gameState);
-  }, [gameState]);
 
   // Actions
   const createRoom = useCallback(async (playerName: string) => {
@@ -345,12 +315,7 @@ export function useGameSocket(): UseGameSocketReturn {
           throw new Error('Hathora client not initialized');
         }
 
-        console.log('🔑 Getting player token...');
         const playerToken = await getPlayerToken();
-        console.log('✅ Got player token');
-
-        console.log('🏠 Creating lobby...');
-        const lobbyStartTime = performance.now();
         const lobby = await hathoraClient.lobbiesV3.createLobby(
           { playerAuth: playerToken },
           {
@@ -361,7 +326,6 @@ export function useGameSocket(): UseGameSocketReturn {
         );
 
         const roomId = lobby.roomId;
-        console.log(`🎮 Hathora lobby created: ${roomId} (took ${(performance.now() - lobbyStartTime).toFixed(0)}ms)`);
 
         // Wait for room to be ready and get connection info
         let connectionUrl: string | null = null;
@@ -416,24 +380,32 @@ export function useGameSocket(): UseGameSocketReturn {
     }
   }, [connectSocket, getHathoraConnectionInfo]);
 
-  // Connect to matchmaking service and join the game room when matched
-  const connectToMatchedRoom = useCallback(async (connectionUrl: string, roomId: string, playerName: string) => {
-    console.log(`🎮 Connecting to matched room: ${roomId}`);
+  // Connect to matchmaking service and join the game room when matched.
+  // Returns false if the flow was cancelled during connection.
+  const connectToMatchedRoom = useCallback(async (connectionUrl: string, roomId: string, playerName: string): Promise<boolean> => {
     await connectSocket(connectionUrl);
-    // Use room:join_matched which creates the room if first player, or joins if second
+
+    // If user cancelled while we were connecting, tear down the socket
+    // that connectSocket just created and bail out.
+    if (quickMatchCancelledRef.current) {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+      return false;
+    }
+
     socketRef.current?.emit('room:join_matched', { roomId, playerName });
+    return true;
   }, [connectSocket]);
 
   const quickMatch = useCallback(async (playerName: string) => {
     if (USE_HATHORA) {
       // Use dedicated matchmaking service
       try {
+        quickMatchCancelledRef.current = false;
         setIsConnecting(true);
         setError(null);
         setQueuePosition(null);
         pendingPlayerNameRef.current = playerName;
-
-        const quickMatchStartTime = performance.now();
 
         // Close existing matchmaking connection if any
         if (matchmakingWsRef.current) {
@@ -442,30 +414,21 @@ export function useGameSocket(): UseGameSocketReturn {
 
         // Get auth token for matchmaking
         const token = await getPlayerToken();
-        console.log(`⏱️ [QuickMatch] Got player token (${(performance.now() - quickMatchStartTime).toFixed(0)}ms)`);
-
-        console.log(`🎮 Connecting to matchmaking server: ${MATCHMAKING_URL}`);
-        const wsConnectStartTime = performance.now();
+        if (quickMatchCancelledRef.current) return;
         const ws = new WebSocket(MATCHMAKING_URL);
         matchmakingWsRef.current = ws;
 
         ws.onopen = () => {
-          console.log(`🔌 Connected to matchmaking server (${(performance.now() - wsConnectStartTime).toFixed(0)}ms)`);
-          // Include auth token in queue join message
+          if (quickMatchCancelledRef.current) { ws.close(); return; }
           ws.send(JSON.stringify({ type: 'queue:join', playerName, token }));
         };
-
-        let queueJoinedTime: number | null = null;
 
         ws.onmessage = async (event) => {
           try {
             const msg = JSON.parse(event.data);
-            console.log('📨 Matchmaking message:', msg);
 
             switch (msg.type) {
               case 'queue:joined':
-                queueJoinedTime = performance.now();
-                console.log(`⏱️ [QuickMatch] Joined queue (${(queueJoinedTime - quickMatchStartTime).toFixed(0)}ms since start)`);
                 setQueuePosition(msg.position);
                 break;
 
@@ -479,21 +442,20 @@ export function useGameSocket(): UseGameSocketReturn {
                 break;
 
               case 'match:found': {
-                const matchFoundTime = performance.now();
-                const waitInQueue = queueJoinedTime ? (matchFoundTime - queueJoinedTime).toFixed(0) : '?';
-                console.log(`✅ Match found! Room: ${msg.roomId} (waited ${waitInQueue}ms in queue, ${(matchFoundTime - quickMatchStartTime).toFixed(0)}ms total)`);
                 setQueuePosition(null);
                 ws.close();
                 matchmakingWsRef.current = null;
+
+                // Bail out if cancelled while in queue
+                if (quickMatchCancelledRef.current) break;
                 
                 // Connect to the Hathora game server
-                const connectStartTime = performance.now();
-                await connectToMatchedRoom(
+                const connected = await connectToMatchedRoom(
                   msg.connectionUrl, 
                   msg.roomId, 
                   pendingPlayerNameRef.current || playerName
                 );
-                console.log(`⏱️ [QuickMatch] Connected to game server (${(performance.now() - connectStartTime).toFixed(0)}ms, ${(performance.now() - quickMatchStartTime).toFixed(0)}ms total)`);
+                if (!connected) break;
                 break;
               }
 
@@ -508,7 +470,6 @@ export function useGameSocket(): UseGameSocketReturn {
         };
 
         ws.onclose = () => {
-          console.log('🔌 Disconnected from matchmaking server');
           matchmakingWsRef.current = null;
         };
 
@@ -533,13 +494,43 @@ export function useGameSocket(): UseGameSocketReturn {
   }, [connectToMatchedRoom]);
 
   const cancelQuickMatch = useCallback(() => {
+    // Signal any in-flight async work (connectToMatchedRoom, etc.) to bail out
+    quickMatchCancelledRef.current = true;
+
+    // 1. Close matchmaking WebSocket if still in queue
     if (matchmakingWsRef.current) {
-      matchmakingWsRef.current.send(JSON.stringify({ type: 'queue:leave' }));
+      try {
+        matchmakingWsRef.current.send(JSON.stringify({ type: 'queue:leave' }));
+      } catch {
+        // WebSocket may already be closing
+      }
       matchmakingWsRef.current.close();
       matchmakingWsRef.current = null;
     }
+
+    // 2. Leave the game room if we already connected to one
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('room:leave');
+    }
+
+    // 3. In Hathora mode the game socket is per-room — disconnect it
+    //    so we don't leak a connection to a room we no longer care about.
+    //    In local mode the socket is shared and stays connected.
+    if (USE_HATHORA && socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    // 4. Reset all UI state
     setQueuePosition(null);
     setIsConnecting(false);
+    setError(null);
+    setGameState(prev => ({
+      ...initialGameState,
+      // In local mode keep the persistent socket's player ID;
+      // in Hathora mode clear it since we disconnected.
+      myPlayerId: USE_HATHORA ? null : prev.myPlayerId,
+    }));
     pendingPlayerNameRef.current = null;
   }, []);
 

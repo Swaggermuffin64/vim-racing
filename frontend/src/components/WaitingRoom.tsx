@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Player } from '../types/multiplayer';
 
 interface WaitingRoomProps {
@@ -268,6 +268,32 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
   const isReady = me?.readyToPlay ?? false;
   const hasOpponent = players.length === 2;
 
+  // Track whether we ever had an opponent so we can distinguish
+  // "waiting for someone to join" from "opponent disconnected".
+  const hadOpponentRef = useRef(false);
+  const [opponentDisconnected, setOpponentDisconnected] = useState(false);
+
+  useEffect(() => {
+    if (hasOpponent) {
+      hadOpponentRef.current = true;
+    } else if (hadOpponentRef.current) {
+      // Had an opponent who is now gone
+      setOpponentDisconnected(true);
+    }
+  }, [hasOpponent]);
+
+  // Quick play: when the opponent disconnects the room is a dead end
+  // (no one else will be matched into it). Auto-leave so the player
+  // can re-queue from the lobby.
+  useEffect(() => {
+    if (isQuickPlay && opponentDisconnected) {
+      const timer = setTimeout(() => {
+        onLeave();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isQuickPlay, opponentDisconnected, onLeave]);
+
   // Auto-ready for quick play when opponent joins
   useEffect(() => {
     if (isQuickPlay && hasOpponent && !isReady) {
@@ -305,16 +331,39 @@ export const WaitingRoom: React.FC<WaitingRoomProps> = ({
         </style>
 
         {!hasOpponent ? (
-          // Searching state
-          <>
-            <div style={styles.searchingText}>
-              Searching for players<span className="animated-dots" style={styles.dots}></span>
-            </div>
+          opponentDisconnected ? (
+            // Opponent disconnected — room is a dead end
+            <>
+              <div style={{
+                ...styles.searchingText,
+                color: colors.textSecondary,
+              }}>
+                Opponent disconnected
+              </div>
+              <div style={{
+                fontSize: '14px',
+                color: colors.textMuted,
+                fontFamily: '"JetBrains Mono", monospace',
+                marginBottom: '24px',
+              }}>
+                Returning to lobby...
+              </div>
+              <button style={styles.cancelButton} onClick={onLeave}>
+                Back to Lobby
+              </button>
+            </>
+          ) : (
+            // Searching state
+            <>
+              <div style={styles.searchingText}>
+                Searching for players<span className="animated-dots" style={styles.dots}></span>
+              </div>
 
-            <button style={styles.cancelButton} onClick={onLeave}>
-              Cancel
-            </button>
-          </>
+              <button style={styles.cancelButton} onClick={onLeave}>
+                Cancel
+              </button>
+            </>
+          )
         ) : (
           // Match found state
           <>

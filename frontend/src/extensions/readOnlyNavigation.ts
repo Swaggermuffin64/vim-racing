@@ -40,7 +40,6 @@ const allowedDeleteRangeState = StateField.define<{ from: number; to: number } |
     // Check for explicit range set effect
     for (const effect of tr.effects) {
       if (effect.is(setAllowedDeleteRange)) {
-        console.log('🎯 [DeleteRange] Set allowed range:', effect.value);
         return effect.value;
       }
     }
@@ -52,10 +51,8 @@ const allowedDeleteRangeState = StateField.define<{ from: number; to: number } |
       
       // If the range collapsed or became invalid, return null
       if (newFrom >= newTo) {
-        console.log('🎯 [DeleteRange] Range collapsed, task should be complete');
         return null;
       }
-      console.log('🎯 [DeleteRange] Range updated:', { from: newFrom, to: newTo }, '(was:', value, ')');
       return { from: newFrom, to: newTo };
     }
     
@@ -86,33 +83,23 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
   if (deleteMode) {
     const allowedRange = tr.startState.field(allowedDeleteRangeState);
     let isValidDeletion = true;
-    let blockReason = '';
     
     tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-      // Must be a deletion (inserted text empty or shorter than deleted)
       const isDelete = inserted.length === 0 || inserted.length < (toA - fromA);
       if (!isDelete) {
         isValidDeletion = false;
-        blockReason = `Not a deletion: inserted ${inserted.length} chars, deleted ${toA - fromA} chars`;
         return;
       }
       
-      // If we have a range restriction, check bounds
       if (allowedRange) {
-        // The deletion must be entirely within the allowed range
         if (fromA < allowedRange.from || toA > allowedRange.to) {
           isValidDeletion = false;
-          blockReason = `Out of bounds: deletion [${fromA}, ${toA}] not in allowed range [${allowedRange.from}, ${allowedRange.to}]`;
         }
       }
     });
 
     if (isValidDeletion) {
-      console.log('✅ [DeleteFilter] Allowed deletion');
-      console.log(allowedRange);
-      return tr; // Allow deletion within range
-    } else {
-      console.log('❌ [DeleteFilter] Blocked:', blockReason);
+      return tr;
     }
   }
 

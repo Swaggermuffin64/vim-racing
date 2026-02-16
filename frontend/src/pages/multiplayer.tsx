@@ -348,6 +348,10 @@ const MultiplayerGame: React.FC = () => {
   }
 
   if (gameState.roomState === 'waiting') {
+    // In quick play, leaving should fully clean up the Hathora socket
+    // and reset to idle so the player can re-queue from the lobby.
+    const handleLeave = initialMode === 'quick' ? cancelQuickMatch : leaveRoom;
+
     return (
       <div style={styles.container}>
         <WaitingRoom
@@ -356,7 +360,7 @@ const MultiplayerGame: React.FC = () => {
           myPlayerId={gameState.myPlayerId}
           isQuickPlay={initialMode === 'quick'}
           onReady={readyToPlay}
-          onLeave={leaveRoom}
+          onLeave={handleLeave}
         />
       </div>
     );

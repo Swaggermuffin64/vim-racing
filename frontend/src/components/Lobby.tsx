@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface LobbyProps {
   isConnected: boolean;
@@ -246,6 +246,19 @@ export const Lobby: React.FC<LobbyProps> = ({
   // For private mode, track if we're joining (create is immediate)
   const [privateSubMode, setPrivateSubMode] = useState<'select' | 'join'>('select');
 
+  // Show a friendly nudge after waiting 10+ seconds in matchmaking queue
+  const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
+
+  useEffect(() => {
+    if (queuePosition === null) {
+      setShowLongWaitMessage(false);
+      return;
+    }
+
+    const timeout = setTimeout(() => setShowLongWaitMessage(true), 10_000);
+    return () => clearTimeout(timeout);
+  }, [queuePosition !== null]);
+
   const handleCreate = () => {
     if (playerName.trim()) {
       onCreateRoom(playerName.trim());
@@ -306,6 +319,7 @@ export const Lobby: React.FC<LobbyProps> = ({
     
     return (
       <div style={styles.pageWrapper}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <div style={styles.topBanner}>
           <div style={styles.topBannerTitle}>VIM_GYM</div>
         </div>
@@ -363,6 +377,69 @@ export const Lobby: React.FC<LobbyProps> = ({
               }}>
                 Waiting for opponent...
               </div>
+              {showLongWaitMessage && (
+                <div style={{
+                  marginTop: '20px',
+                  padding: '14px 18px',
+                  background: `${colors.accent}10`,
+                  border: `1px solid ${colors.accent}30`,
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  lineHeight: 1.6,
+                  color: colors.textSecondary,
+                  textAlign: 'left' as const,
+                }}>
+                  We're just getting started — it's possible no other players are
+                  matching right now. Feel free to try{' '}
+                  <a
+                    href="/practice"
+                    style={{ color: colors.accent, textDecoration: 'underline' }}
+                  >
+                    practice mode
+                  </a>{' '}
+                  or keep waiting!
+                </div>
+              )}
+            </div>
+            {onCancelQuickMatch && (
+              <button
+                style={{
+                  ...styles.button,
+                  ...styles.buttonOutline,
+                  marginTop: '16px',
+                }}
+                onClick={onCancelQuickMatch}
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        ) : isLoading ? (
+          /* Connecting phase — between clicking Find Match and entering
+             the queue, or between match:found and joining the game room.
+             Show a clear status with a cancel option. */
+          <div style={styles.card}>
+            <div style={styles.cardTitle}>Connecting</div>
+            <div style={{
+              textAlign: 'center' as const,
+              padding: '20px 0',
+            }}>
+              <div style={{
+                width: '32px',
+                height: '32px',
+                border: `3px solid ${colors.border}`,
+                borderTopColor: colors.accent,
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                margin: '0 auto 16px',
+              }} />
+              <div style={{
+                fontSize: '14px',
+                color: colors.textSecondary,
+                fontFamily: '"JetBrains Mono", monospace',
+              }}>
+                Connecting to matchmaking...
+              </div>
             </div>
             {onCancelQuickMatch && (
               <button
@@ -395,19 +472,19 @@ export const Lobby: React.FC<LobbyProps> = ({
               style={{
                 ...styles.button,
                 background: `linear-gradient(135deg, ${colors.success} 0%, #059669 100%)`,
-                ...((!canInteract || !playerName.trim() || isLoading) ? styles.buttonDisabled : {}),
+                ...((!canInteract || !playerName.trim()) ? styles.buttonDisabled : {}),
               }}
               onClick={handleQuickMatch}
-              disabled={!canInteract || !playerName.trim() || isLoading}
+              disabled={!canInteract || !playerName.trim()}
             >
-              {isLoading ? 'Connecting...' : 'Find Match'}
+              Find Match
             </button>
           </>
         )}
 
         <button
           style={styles.backButton}
-          onClick={isInQueue && onCancelQuickMatch ? onCancelQuickMatch : handleBack}
+          onClick={(isInQueue || isLoading) && onCancelQuickMatch ? onCancelQuickMatch : handleBack}
           disabled={false}
         >
           ← Back
