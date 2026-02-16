@@ -264,8 +264,9 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    // Public rooms don't support rematch — players should requeue via matchmaking
-    if (room.isPublic) {
+    // Public rooms don't support rematch — players should requeue via matchmaking.
+    // Only block when the room is finished (rematch attempt), not during initial ready-up.
+    if (room.isPublic && room.state === 'finished') {
       socket.emit('room:error', { message: 'Please requeue for a new match' });
       return;
     }
