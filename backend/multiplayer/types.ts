@@ -1,6 +1,8 @@
 // Shared multiplayer types
 import type { PositionTask, Task } from "../types.js";
 
+export const MAX_PLAYERS_PER_ROOM = 2;
+
 export interface Player {
   id: string;
   name: string;

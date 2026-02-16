@@ -1,4 +1,5 @@
 import type { Server, Socket } from 'socket.io';
+import { MAX_PLAYERS_PER_ROOM } from './types.js';
 import type { 
   GameRoom, 
   Player, 
@@ -158,7 +159,7 @@ export class RoomManager {
       updateLobbyState(roomId, {
         status: 'waiting',
         playerCount: 1,
-        maxPlayers: 2,
+        maxPlayers: MAX_PLAYERS_PER_ROOM,
       });
     }
     
@@ -186,8 +187,7 @@ export class RoomManager {
       return null;
     }
 
-    //currently limit of 2 players per room
-    if (room.players.size >= 2) {
+    if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
       socket.emit('room:error', { message: 'Room is full' });
       return null;
     }
@@ -218,9 +218,9 @@ export class RoomManager {
     // Update Hathora lobby state - room is now full if 2 players
     if (room.isPublic) {
       updateLobbyState(roomId, {
-        status: room.players.size >= 2 ? 'racing' : 'waiting',
+        status: room.players.size >= MAX_PLAYERS_PER_ROOM ? 'racing' : 'waiting',
         playerCount: room.players.size,
-        maxPlayers: 2,
+        maxPlayers: MAX_PLAYERS_PER_ROOM,
       });
     }
     
@@ -270,7 +270,7 @@ export class RoomManager {
     console.log("all players", room.players);
     // Check to see if all players are ready
     const playerCount = room.players.size;
-    if (playerCount < 2) {
+    if (playerCount < MAX_PLAYERS_PER_ROOM) {
       console.log("Waiting for other players to join...");
       return;
     }
@@ -303,7 +303,7 @@ export class RoomManager {
       updateLobbyState(roomId, {
         status: 'countdown',
         playerCount: room.players.size,
-        maxPlayers: 2,
+        maxPlayers: MAX_PLAYERS_PER_ROOM,
       });
     }
 
@@ -655,7 +655,7 @@ export class RoomManager {
   findOrCreateQuickMatchRoom(socket: GameSocket, playerName: string): { room: GameRoom; isNewRoom: boolean } {
     // Find a waiting PUBLIC room with space available (don't join private rooms)
     for (const [roomId, room] of this.rooms) {
-      if (room.state === 'waiting' && room.players.size < 2 && room.isPublic) {
+      if (room.state === 'waiting' && room.players.size < MAX_PLAYERS_PER_ROOM && room.isPublic) {
         const joinedRoom = this.joinRoom(socket, roomId, playerName);
         if (joinedRoom) {
           console.log(`🎯 Quick match: ${playerName} joined existing room ${roomId}`);

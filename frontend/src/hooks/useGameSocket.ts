@@ -350,6 +350,7 @@ export function useGameSocket(): UseGameSocketReturn {
         console.log('✅ Got player token');
 
         console.log('🏠 Creating lobby...');
+        const lobbyStartTime = performance.now();
         const lobby = await hathoraClient.lobbiesV3.createLobby(
           { playerAuth: playerToken },
           {
@@ -360,7 +361,7 @@ export function useGameSocket(): UseGameSocketReturn {
         );
 
         const roomId = lobby.roomId;
-        console.log('🎮 Hathora lobby created:', roomId);
+        console.log(`🎮 Hathora lobby created: ${roomId} (took ${(performance.now() - lobbyStartTime).toFixed(0)}ms)`);
 
         // Wait for room to be ready and get connection info
         let connectionUrl: string | null = null;

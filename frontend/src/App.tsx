@@ -99,7 +99,6 @@ const homeStyles: Record<string, React.CSSProperties> = {
     color: colors.textPrimary,
     fontFamily: '"JetBrains Mono", "Fira Code", monospace',
     letterSpacing: '-2px',
-    animation: 'title-glow 3s ease-in-out infinite',
   },
   subtitle: {
     fontSize: '18px',
