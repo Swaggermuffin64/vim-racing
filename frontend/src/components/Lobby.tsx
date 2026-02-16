@@ -246,18 +246,19 @@ export const Lobby: React.FC<LobbyProps> = ({
   // For private mode, track if we're joining (create is immediate)
   const [privateSubMode, setPrivateSubMode] = useState<'select' | 'join'>('select');
 
-  // Show a friendly nudge after waiting 10+ seconds in matchmaking queue
+  // Show a friendly nudge after waiting 10+ seconds in quick match
   const [showLongWaitMessage, setShowLongWaitMessage] = useState(false);
+  const isQuickMatchWaiting = initialMode === 'quick' && (isConnecting || queuePosition !== null);
 
   useEffect(() => {
-    if (queuePosition === null) {
+    if (!isQuickMatchWaiting) {
       setShowLongWaitMessage(false);
       return;
     }
 
     const timeout = setTimeout(() => setShowLongWaitMessage(true), 10_000);
     return () => clearTimeout(timeout);
-  }, [queuePosition !== null]);
+  }, [isQuickMatchWaiting]);
 
   const handleCreate = () => {
     if (playerName.trim()) {
@@ -312,6 +313,30 @@ export const Lobby: React.FC<LobbyProps> = ({
   const handleBack = () => {
     window.location.href = '/';
   };
+
+  const longWaitMessage = showLongWaitMessage ? (
+    <div style={{
+      marginTop: '20px',
+      padding: '14px 18px',
+      background: `${colors.accent}10`,
+      border: `1px solid ${colors.accent}30`,
+      borderRadius: '10px',
+      fontSize: '13px',
+      lineHeight: 1.6,
+      color: colors.textSecondary,
+      textAlign: 'left' as const,
+    }}>
+      We're just getting started — it's possible no other players are
+      matching right now. Feel free to try{' '}
+      <a
+        href="/practice"
+        style={{ color: colors.accent, textDecoration: 'underline' }}
+      >
+        practice mode
+      </a>{' '}
+      or keep waiting!
+    </div>
+  ) : null;
 
   // Quick Play flow
   if (initialMode === 'quick') {
@@ -377,29 +402,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               }}>
                 Waiting for opponent...
               </div>
-              {showLongWaitMessage && (
-                <div style={{
-                  marginTop: '20px',
-                  padding: '14px 18px',
-                  background: `${colors.accent}10`,
-                  border: `1px solid ${colors.accent}30`,
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  lineHeight: 1.6,
-                  color: colors.textSecondary,
-                  textAlign: 'left' as const,
-                }}>
-                  We're just getting started — it's possible no other players are
-                  matching right now. Feel free to try{' '}
-                  <a
-                    href="/practice"
-                    style={{ color: colors.accent, textDecoration: 'underline' }}
-                  >
-                    practice mode
-                  </a>{' '}
-                  or keep waiting!
-                </div>
-              )}
+              {longWaitMessage}
             </div>
             {onCancelQuickMatch && (
               <button
@@ -440,6 +443,7 @@ export const Lobby: React.FC<LobbyProps> = ({
               }}>
                 Connecting to matchmaking...
               </div>
+              {longWaitMessage}
             </div>
             {onCancelQuickMatch && (
               <button

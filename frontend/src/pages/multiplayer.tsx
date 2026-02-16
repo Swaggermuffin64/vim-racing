@@ -320,6 +320,15 @@ const MultiplayerGame: React.FC = () => {
     clearResetFlag();
   }, [gameState.shouldResetEditor, gameState.task, clearResetFlag]);
 
+  // In quick play, "Play Again" should leave the current room and re-queue
+  const requeue = useCallback(() => {
+    const playerName = me?.name;
+    cancelQuickMatch();
+    if (playerName) {
+      quickMatch(playerName);
+    }
+  }, [me?.name, cancelQuickMatch, quickMatch]);
+
   // Format time display
   const formatTime = (ms: number): string => {
     const seconds = Math.floor(ms / 1000);
@@ -377,8 +386,8 @@ const MultiplayerGame: React.FC = () => {
         <RaceResults
           rankings={gameState.rankings}
           myPlayerId={gameState.myPlayerId}
-          onPlayAgain={readyToPlay}
-          onLeave={leaveRoom}
+          onPlayAgain={initialMode === 'quick' ? requeue : readyToPlay}
+          onLeave={initialMode === 'quick' ? cancelQuickMatch : leaveRoom}
         />
       )}
 
