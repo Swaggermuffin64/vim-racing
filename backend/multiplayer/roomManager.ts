@@ -33,6 +33,7 @@ export class RoomManager {
   private playerRooms: Map<string, string> = new Map(); // playerId -> roomId
   private roomCleanupTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> cleanup timer
   private waitingRoomTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> waiting timeout
+  private roomDestroyTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> post-race destroy timer
   private io: GameServer;
   private NUM_TASKS: number = 10;
   private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
@@ -262,26 +263,30 @@ export class RoomManager {
     if (!roomId || !playerId) return;
     const room = this.rooms.get(roomId);
     if (!room) return;
+
+    // Public rooms don't support rematch — players should requeue via matchmaking
+    if (room.isPublic) {
+      socket.emit('room:error', { message: 'Please requeue for a new match' });
+      return;
+    }
+
     const player = room.players.get(playerId);
     if (!player) return;
     player.readyToPlay = true;
     room.state = 'waiting';
     this.io.to(roomId).emit('room:player_ready', { playerId });
-    console.log("all players", room.players);
+
     // Check to see if all players are ready
     const playerCount = room.players.size;
     if (playerCount < MAX_PLAYERS_PER_ROOM) {
-      console.log("Waiting for other players to join...");
       return;
     }
     const allReady = Array.from(room.players.values()).every(p => p.readyToPlay);
     if (!allReady) {
-      console.log("Waiting for other players to be ready...");
       return;
     }
     
     // All players are ready - reset room, then start countdown
-    console.log("All players ready! Resetting room, then starting countdown.");
     this.resetRoom(socket);
     this.startCountdown(roomId);
   }
@@ -505,14 +510,16 @@ export class RoomManager {
     console.log(`🏆 Race complete in room ${roomId} (${room.isPublic ? 'public' : 'private'}):`, rankings);
     this.io.to(roomId).emit('game:complete', { rankings });
 
-    // For PUBLIC rooms (quick match): destroy immediately after a short delay
-    // Players can quick match again to find new opponents
+    // For PUBLIC rooms (quick match): destroy after a short delay
+    // Players should requeue via matchmaking for a new opponent
     if (room.isPublic) {
-      console.log(`🎯 Public room ${roomId} - scheduling immediate destruction`);
-      setTimeout(() => {
+      console.log(`🎯 Public room ${roomId} - scheduling destruction`);
+      const timer = setTimeout(() => {
+        this.roomDestroyTimers.delete(roomId);
         console.log(`🗑️ Auto-destroying public room ${roomId}`);
         this.destroyRoom(roomId);
-      }, 3000); // 3 second delay to ensure clients receive rankings
+      }, 3000);
+      this.roomDestroyTimers.set(roomId, timer);
       return;
     }
 
@@ -577,6 +584,12 @@ export class RoomManager {
     this.rooms.delete(roomId);
     this.cancelRoomCleanup(roomId);
     this.cancelWaitingRoomTimeout(roomId);
+
+    const destroyTimer = this.roomDestroyTimers.get(roomId);
+    if (destroyTimer) {
+      clearTimeout(destroyTimer);
+      this.roomDestroyTimers.delete(roomId);
+    }
 
     console.log(`✅ Room ${roomId} destroyed. Remaining rooms: ${this.rooms.size}`);
 
