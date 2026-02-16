@@ -319,12 +319,15 @@ io.on('connection', (socket) => {
 
   // Quick match - find or create a room automatically
   socket.on('room:quick_match', rateLimitedHandler(socket, 'room:quick_match', ({ playerName }) => {
+    const startTime = performance.now();
     // Validate input
     const nameResult = validatePlayerName(playerName);
     const safeName = nameResult.value!;
     
     const { room, isNewRoom } = roomManager.findOrCreateQuickMatchRoom(socket, safeName);
     const player = room.players.get(socket.id)!;
+    
+    console.log(`⏱️ [quick_match] ${safeName} → ${isNewRoom ? 'created' : 'joined'} room ${room.id} (${(performance.now() - startTime).toFixed(0)}ms)`);
     
     if (isNewRoom) {
       socket.emit('room:created', { roomId: room.id, player });

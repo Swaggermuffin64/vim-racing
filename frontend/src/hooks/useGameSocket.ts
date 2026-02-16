@@ -433,6 +433,8 @@ export function useGameSocket(): UseGameSocketReturn {
         setQueuePosition(null);
         pendingPlayerNameRef.current = playerName;
 
+        const quickMatchStartTime = performance.now();
+
         // Close existing matchmaking connection if any
         if (matchmakingWsRef.current) {
           matchmakingWsRef.current.close();
@@ -440,16 +442,20 @@ export function useGameSocket(): UseGameSocketReturn {
 
         // Get auth token for matchmaking
         const token = await getPlayerToken();
+        console.log(`⏱️ [QuickMatch] Got player token (${(performance.now() - quickMatchStartTime).toFixed(0)}ms)`);
 
         console.log(`🎮 Connecting to matchmaking server: ${MATCHMAKING_URL}`);
+        const wsConnectStartTime = performance.now();
         const ws = new WebSocket(MATCHMAKING_URL);
         matchmakingWsRef.current = ws;
 
         ws.onopen = () => {
-          console.log('🔌 Connected to matchmaking server');
+          console.log(`🔌 Connected to matchmaking server (${(performance.now() - wsConnectStartTime).toFixed(0)}ms)`);
           // Include auth token in queue join message
           ws.send(JSON.stringify({ type: 'queue:join', playerName, token }));
         };
+
+        let queueJoinedTime: number | null = null;
 
         ws.onmessage = async (event) => {
           try {
@@ -458,6 +464,8 @@ export function useGameSocket(): UseGameSocketReturn {
 
             switch (msg.type) {
               case 'queue:joined':
+                queueJoinedTime = performance.now();
+                console.log(`⏱️ [QuickMatch] Joined queue (${(queueJoinedTime - quickMatchStartTime).toFixed(0)}ms since start)`);
                 setQueuePosition(msg.position);
                 break;
 
@@ -470,19 +478,24 @@ export function useGameSocket(): UseGameSocketReturn {
                 setIsConnecting(false);
                 break;
 
-              case 'match:found':
-                console.log(`✅ Match found! Room: ${msg.roomId}`);
+              case 'match:found': {
+                const matchFoundTime = performance.now();
+                const waitInQueue = queueJoinedTime ? (matchFoundTime - queueJoinedTime).toFixed(0) : '?';
+                console.log(`✅ Match found! Room: ${msg.roomId} (waited ${waitInQueue}ms in queue, ${(matchFoundTime - quickMatchStartTime).toFixed(0)}ms total)`);
                 setQueuePosition(null);
                 ws.close();
                 matchmakingWsRef.current = null;
                 
                 // Connect to the Hathora game server
+                const connectStartTime = performance.now();
                 await connectToMatchedRoom(
                   msg.connectionUrl, 
                   msg.roomId, 
                   pendingPlayerNameRef.current || playerName
                 );
+                console.log(`⏱️ [QuickMatch] Connected to game server (${(performance.now() - connectStartTime).toFixed(0)}ms, ${(performance.now() - quickMatchStartTime).toFixed(0)}ms total)`);
                 break;
+              }
 
               case 'error':
                 console.error('❌ Matchmaking error:', msg.message);

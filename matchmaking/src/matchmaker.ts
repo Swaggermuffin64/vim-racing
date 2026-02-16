@@ -130,6 +130,8 @@ export class Matchmaker {
 
   
   private async tryMatch() {
+    const tryMatchStartTime = performance.now();
+
     // Short lock: Get room groups, matched players, and remove them from queue
     const result = await this.mutex.runExclusive(() => {
       if (this.queue.size < this.playersPerMatch) {
@@ -156,13 +158,16 @@ export class Matchmaker {
       return;
     }
     console.log(`🎯 Matching ${groupedPlayers.length} players:`, groupedPlayers.map((p) => p.name).join(', '));
+    console.log(`⏱️ [tryMatch] Grouped players (${(performance.now() - tryMatchStartTime).toFixed(0)}ms)`);
     // No lock: create rooms in parallel (this can take several seconds)
 
     try {
       // Create Hathora rooms for all groups in parallel
+      const roomCreateStartTime = performance.now();
       const matchResults = await Promise.allSettled(
         roomGroups.map((roomGroup) => this.createHathoraRoom(roomGroup))
       );
+      console.log(`⏱️ [tryMatch] All rooms created (${(performance.now() - roomCreateStartTime).toFixed(0)}ms for ${roomGroups.length} room(s))`);
 
       // Notify all matched players in each group
       for (let i = 0; i < roomGroups.length; i++) {
@@ -185,6 +190,7 @@ export class Matchmaker {
         }
         // otherwise requeue
         else {
+          console.error(`❌ Room creation failed for group ${i}:`, matchResult.reason?.message);
           for (const player of roomGroup){
             if (player.socket.readyState !== player.socket.OPEN) continue;
             this.queue.set(player.id, player);
@@ -194,6 +200,8 @@ export class Matchmaker {
           this.scheduleRetry();
         }
       }
+
+      console.log(`⏱️ [tryMatch] Complete (${(performance.now() - tryMatchStartTime).toFixed(0)}ms total)`);
     } catch (err: any) {
       console.error('❌ Failed to create match:', err?.message);
 
@@ -214,6 +222,8 @@ export class Matchmaker {
   }
 
   private async createHathoraRoom(players: QueuedPlayer[]): Promise<MatchResult> {
+    const startTime = performance.now();
+
     // Create room using Rooms API (requires dev token)
     const room = await this.hathoraClient.roomsV2.createRoom({
       region: 'Washington_DC',
@@ -224,11 +234,14 @@ export class Matchmaker {
     });
 
     const roomId = room.roomId;
-    console.log(`🏠 Hathora room created: ${roomId}`);
+    console.log(`🏠 Hathora room created: ${roomId} (API call took ${(performance.now() - startTime).toFixed(0)}ms)`);
 
     // Wait for room to be ready
+    const pollStartTime = performance.now();
     let connectionUrl: string | null = null;
+    let pollAttempts = 0;
     for (let i = 0; i < 15; i++) {
+      pollAttempts++;
       try {
         const connectionInfo = await this.hathoraClient.roomsV2.getConnectionInfo(roomId);
         if (connectionInfo.status === 'active' && connectionInfo.exposedPort) {
@@ -243,8 +256,11 @@ export class Matchmaker {
     }
 
     if (!connectionUrl) {
+      console.error(`⏱️ [createHathoraRoom] Room ${roomId} failed to become ready after ${pollAttempts} polls (${(performance.now() - pollStartTime).toFixed(0)}ms)`);
       throw new Error('Room failed to become ready');
     }
+
+    console.log(`⏱️ [createHathoraRoom] Room ${roomId} ready after ${pollAttempts} poll(s) (poll: ${(performance.now() - pollStartTime).toFixed(0)}ms, total: ${(performance.now() - startTime).toFixed(0)}ms)`);
 
     return {
       roomId,
