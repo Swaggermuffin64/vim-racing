@@ -270,13 +270,7 @@ export function generatePositionTasks(count: number): Task[] {
 }
 
 export function generateDeleteTasks(count: number): Task[] {
-  CODE_SNIPPIT_OBJECTS.forEach((snippet, i) => {
-    console.log(`\n=== Snippet ${i} ===`);
-    console.log('Curly braces:', JSON.stringify(snippet.curlyBraceIndices));
-    console.log('Parentheses:', JSON.stringify(snippet.parenthesisIndices));
-  });
-  const deleteTasks = Array.from({ length: count }, generateDeleteTask);
-  return deleteTasks; 
+  return Array.from({ length: count }, generateDeleteTask);
 }
 
 /**

@@ -57,15 +57,26 @@ const httpRateLimiter = new RateLimiter({
 const connectionMeta = new Map<string, { ip: string }>();
 
 /**
- * Extract client IP from request, handling proxies
+ * Extract client IP from request.
+ * Prefers Fly-Client-IP (set by Fly.io edge, cannot be spoofed by clients),
+ * then falls back to the rightmost X-Forwarded-For entry (added by the
+ * closest trusted proxy), then the direct socket address.
  */
 function getClientIp(req: IncomingMessage): string {
+  const flyClientIp = req.headers['fly-client-ip'];
+  if (flyClientIp) {
+    return (Array.isArray(flyClientIp) ? flyClientIp[0] : flyClientIp)?.trim() || 'unknown';
+  }
+
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) {
-    // x-forwarded-for can be comma-separated list, take first
-    const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
-    return ip?.trim() || 'unknown';
+    const raw = Array.isArray(forwarded) ? forwarded[0] ?? '' : forwarded;
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      return parts[parts.length - 1]!;
+    }
   }
+
   return req.socket.remoteAddress || 'unknown';
 }
 
@@ -141,7 +152,7 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 });
 
 // Create WebSocket server attached to HTTP server
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, maxPayload: 4096 });
 
 wss.on('connection', (socket, req) => {
   const connectionId = randomUUID().slice(0, 8);
@@ -168,8 +179,12 @@ wss.on('connection', (socket, req) => {
     }
     
     try {
-      const message: ClientMessage = JSON.parse(data.toString());
-      handleMessage(socket, connectionId, message);
+      const parsed: unknown = JSON.parse(data.toString());
+      if (!isValidClientMessage(parsed)) {
+        send(socket, { type: 'error', message: 'Invalid message format' });
+        return;
+      }
+      handleMessage(socket, connectionId, parsed);
     } catch (err) {
       send(socket, { type: 'error', message: 'Invalid message format' });
     }
@@ -192,6 +207,23 @@ wss.on('connection', (socket, req) => {
     console.error(`❌ Socket error (${connectionId}):`, err.message);
   });
 });
+
+function isValidClientMessage(msg: unknown): msg is ClientMessage {
+  if (!msg || typeof msg !== 'object') return false;
+  const m = msg as Record<string, unknown>;
+  if (typeof m.type !== 'string') return false;
+
+  switch (m.type) {
+    case 'queue:join':
+      if (m.token !== undefined && typeof m.token !== 'string') return false;
+      return true;
+    case 'queue:leave':
+    case 'ping':
+      return true;
+    default:
+      return false;
+  }
+}
 
 async function handleMessage(socket: WebSocket, connectionId: string, message: ClientMessage) {
   switch (message.type) {

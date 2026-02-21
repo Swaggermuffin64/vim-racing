@@ -36,6 +36,7 @@ export class RoomManager {
   private roomDestroyTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> post-race destroy timer
   private io: GameServer;
   private NUM_TASKS: number = 10;
+  private MIN_TASK_COMPLETION_MS = 150; // Reject completions faster than any human can react
   private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
   private WAITING_ROOM_TIMEOUT_MS_PRIVATE = 5 * 60 * 1000; // 5 minutes for private rooms (friends coordinating)
   private WAITING_ROOM_TIMEOUT_MS_PUBLIC = 30 * 1000; // 30 seconds for public rooms (auto-ready should fire in ~2s)
@@ -103,12 +104,17 @@ export class RoomManager {
     return code;
   }
 
-  createRoom(socket: GameSocket, playerName: string, externalRoomId?: string, isPublic: boolean = false): GameRoom {
+  createRoom(socket: GameSocket, playerName: string, externalRoomId?: string, isPublic: boolean = false): GameRoom | null {
     console.log(`📥 createRoom called: playerName=${playerName}, externalRoomId=${externalRoomId}, isPublic=${isPublic} (type: ${typeof isPublic})`);
     
     // Cancel startup timer since we have activity
     this.cancelStartupTimer();
     const roomId = externalRoomId || this.generateRoomId();
+
+    if (this.rooms.has(roomId)) {
+      socket.emit('room:error', { message: 'Room already exists' });
+      return null;
+    }
     const playerId = socket.id;
     
     const player: Player = {
@@ -174,7 +180,12 @@ export class RoomManager {
   joinRoom(socket: GameSocket, roomId: string, playerName: string): GameRoom | null {
     // Cancel startup timer since we have activity
     this.cancelStartupTimer();
-    
+
+    // Leave any existing room to prevent ghost players
+    if (socket.data.roomId) {
+      this.leaveRoom(socket);
+    }
+
     const room = this.rooms.get(roomId);
     const playerId = socket.id;
 
@@ -332,7 +343,13 @@ export class RoomManager {
     if (!room) return;
 
     room.state = 'racing';
-    room.startTime = Date.now();
+    const now = Date.now();
+    room.startTime = now;
+
+    room.players.forEach(player => {
+      player.taskStartedAt = now;
+    });
+
     console.log(`🏁 Race started in room ${roomId}`);
     this.io.to(roomId).emit('game:start', { startTime: room.startTime, initialTask: room.tasks[0], num_tasks: room.num_tasks});
   }
@@ -346,10 +363,13 @@ export class RoomManager {
     const player = room.players.get(playerId);
     if (!player || player.isFinished) return;
     const currentTask = room.tasks[player.taskProgress];
-    //1. Task must exist and be navigate type
     if (!currentTask || currentTask.type !== 'navigate') return;
+
+    if (player.taskStartedAt && (Date.now() - player.taskStartedAt) < this.MIN_TASK_COMPLETION_MS) {
+      return;
+    }
+
     player.successIndicator.cursorOffset = offset;
-    //2. Check if the player is at the current task offset, if so advance player task 
     if (this.evaluateTaskCompletion(player, currentTask)) {
       this.advancePlayerTask(socket, room, player, roomId);
     }
@@ -365,11 +385,13 @@ export class RoomManager {
     const player = room.players.get(playerId);
     if (!player || player.isFinished) return;
     
-    // Check if the current task is a delete task
     const currentTask = room.tasks[player.taskProgress];
     if (!currentTask || currentTask.type !== 'delete') return;
-    
-    // Update the player's editor text for validation
+
+    if (player.taskStartedAt && (Date.now() - player.taskStartedAt) < this.MIN_TASK_COMPLETION_MS) {
+      return;
+    }
+
     player.successIndicator.editorText = text;
 
     // Check if the task is completed
@@ -416,8 +438,8 @@ export class RoomManager {
   private advancePlayerTask(socket: GameSocket, room: GameRoom, player: Player, roomId: string): void {
     const playerId = player.id;
     player.taskProgress += 1;
-    
-    // Reset editor text for next task
+    player.taskStartedAt = Date.now();
+
     player.successIndicator.editorText = '';
     
     // Send task progress and new task to the user
@@ -463,8 +485,6 @@ export class RoomManager {
       }
 
       case 'delete': {
-        console.log(player.successIndicator.editorText, "Player text");
-        console.log(currentTask.expectedResult);
         return player.successIndicator.editorText === currentTask.expectedResult;
       }
 
@@ -531,6 +551,7 @@ export class RoomManager {
       player.taskProgress = 0;
       player.isFinished = false;
       player.readyToPlay = false;
+      delete player.taskStartedAt;
     });
 
     // Schedule room cleanup if players don't start a new game
@@ -651,6 +672,7 @@ export class RoomManager {
       player.isFinished = false;
       player.readyToPlay = false;
       delete player.finishTime;
+      delete player.taskStartedAt;
     });
 
     // Reset room state
@@ -666,7 +688,7 @@ export class RoomManager {
     });
   }
 
-  findOrCreateQuickMatchRoom(socket: GameSocket, playerName: string): { room: GameRoom; isNewRoom: boolean } {
+  findOrCreateQuickMatchRoom(socket: GameSocket, playerName: string): { room: GameRoom; isNewRoom: boolean } | null {
     // Find a waiting PUBLIC room with space available (don't join private rooms)
     for (const [roomId, room] of this.rooms) {
       if (room.state === 'waiting' && room.players.size < MAX_PLAYERS_PER_ROOM && room.isPublic) {
@@ -681,6 +703,7 @@ export class RoomManager {
     // No available room found, create a new PUBLIC one
     console.log(`🏠 Quick match: Creating new public room for ${playerName}`);
     const newRoom = this.createRoom(socket, playerName, undefined, true);
+    if (!newRoom) return null;
     return { room: newRoom, isNewRoom: true };
   }
 

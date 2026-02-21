@@ -11,6 +11,8 @@ export interface Player {
   successIndicator: { cursorOffset?: number; editorText?: string };
   readyToPlay: boolean;
   finishTime?: number;
+  /** Server-side only: timestamp when the current task was presented */
+  taskStartedAt?: number;
 }
 
 export interface GameRoom {

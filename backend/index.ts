@@ -42,8 +42,19 @@ await fastify.register(fastifyRateLimit, {
   allowList: (req: { url?: string }) => req.url === '/',
 });
 
-// Store active tasks (in production, use Redis/DB)
-const activeTasks = new Map<string, PositionTask>();
+// Store active tasks with TTL to prevent unbounded memory growth
+const ACTIVE_TASKS_MAX = 10_000;
+const ACTIVE_TASKS_TTL_MS = 5 * 60 * 1000;
+const activeTasks = new Map<string, { task: PositionTask; createdAt: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of activeTasks) {
+    if (now - entry.createdAt > ACTIVE_TASKS_TTL_MS) {
+      activeTasks.delete(id);
+    }
+  }
+}, 60_000);
 
 // Shuffle array helper
 function shuffle<T>(array: T[]): T[] {
@@ -64,8 +75,11 @@ fastify.get('/', async () => {
 
 // Get a new position task (single player)
 fastify.get('/api/task/position', async (): Promise<TaskResponse> => {
+  if (activeTasks.size >= ACTIVE_TASKS_MAX) {
+    throw new Error('Too many active tasks');
+  }
   const task = generatePositionTask();
-  activeTasks.set(task.id, task);
+  activeTasks.set(task.id, { task, createdAt: Date.now() });
   
   return {
     task,
@@ -90,16 +104,16 @@ fastify.post<{
     return { success: false, error: offsetResult.error };
   }
   
-  const task = activeTasks.get(taskId);
-  if (!task) {
+  const entry = activeTasks.get(taskId);
+  if (!entry) {
     return { success: false, error: 'Task not found' };
   }
   
-  if (task.type !== 'navigate') {
+  if (entry.task.type !== 'navigate') {
     return { success: false, error: 'Invalid task type' };
   }
   
-  const isComplete = checkPositionTask(task, offsetResult.value!);
+  const isComplete = checkPositionTask(entry.task, offsetResult.value!);
   
   if (isComplete) {
     activeTasks.delete(taskId);
@@ -107,7 +121,6 @@ fastify.post<{
   
   return { 
     success: isComplete,
-    targetOffset: task.targetOffset,
     cursorOffset: offsetResult.value,
   };
 });
@@ -137,15 +150,29 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
     origin: CORS_ORIGINS,
     methods: ['GET', 'POST'],
   },
+  maxHttpBufferSize: 64 * 1024,
 });
 
+/**
+ * Extract client IP from Socket.IO handshake.
+ * Uses the rightmost X-Forwarded-For entry (added by the closest trusted proxy)
+ * rather than the leftmost (which is client-controlled and spoofable).
+ */
+function getClientIp(handshake: { headers: Record<string, string | string[] | undefined>; address: string }): string {
+  const forwarded = handshake.headers['x-forwarded-for'];
+  if (forwarded) {
+    const raw = typeof forwarded === 'string' ? forwarded : forwarded[0] ?? '';
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      return parts[parts.length - 1]!;
+    }
+  }
+  return handshake.address || 'unknown';
+}
+
 // Connection limit middleware - runs first
-// Limits concurrent connections per IP to prevent resource exhaustion
 io.use((socket, next) => {
-  // Get client IP from socket handshake
-  const ip = socket.handshake.headers['x-forwarded-for'] as string 
-    || socket.handshake.address 
-    || 'unknown';
+  const ip = getClientIp(socket.handshake);
   
   // Store IP on socket for later cleanup
   socket.data.clientIp = ip;
@@ -200,7 +227,16 @@ function rateLimitedHandler<T>(
       socket.emit('room:error', { message: 'Too many requests. Please slow down.' });
       return;
     }
-    handler(data);
+    if (data === null || data === undefined || typeof data !== 'object') {
+      socket.emit('room:error', { message: 'Invalid request data' });
+      return;
+    }
+    try {
+      handler(data);
+    } catch (err) {
+      console.error(`Uncaught error in ${eventName}:`, err instanceof Error ? err.message : err);
+      socket.emit('room:error', { message: 'Internal error' });
+    }
   };
 }
 
@@ -217,7 +253,12 @@ function rateLimitedVoidHandler(
       socket.emit('room:error', { message: 'Too many requests. Please slow down.' });
       return;
     }
-    handler();
+    try {
+      handler();
+    } catch (err) {
+      console.error(`Uncaught error in ${eventName}:`, err instanceof Error ? err.message : err);
+      socket.emit('room:error', { message: 'Internal error' });
+    }
   };
 }
 
@@ -247,6 +288,7 @@ io.on('connection', (socket) => {
     
     console.log(`📥 room:create received: playerName=${safeName}, roomId=${safeRoomId}, isPublic=${safeIsPublic}`);
     const room = roomManager.createRoom(socket, safeName, safeRoomId, safeIsPublic);
+    if (!room) return;
     const player = room.players.get(socket.id)!;
     socket.emit('room:created', { 
       roomId: room.id, 
@@ -307,8 +349,8 @@ io.on('connection', (socket) => {
       }
     } else {
       // First player to arrive - create the room with the matched roomId
-      // This is a public quick-match room
       const room = roomManager.createRoom(socket, safeName, safeRoomId, true);
+      if (!room) return;
       const player = room.players.get(socket.id)!;
       socket.emit('room:created', { 
         roomId: room.id, 
@@ -324,7 +366,9 @@ io.on('connection', (socket) => {
     const nameResult = validatePlayerName(playerName);
     const safeName = nameResult.value!;
     
-    const { room, isNewRoom } = roomManager.findOrCreateQuickMatchRoom(socket, safeName);
+    const result = roomManager.findOrCreateQuickMatchRoom(socket, safeName);
+    if (!result) return;
+    const { room, isNewRoom } = result;
     const player = room.players.get(socket.id)!;
     
     console.log(`⏱️ [quick_match] ${safeName} → ${isNewRoom ? 'created' : 'joined'} room ${room.id} (${(performance.now() - startTime).toFixed(0)}ms)`);

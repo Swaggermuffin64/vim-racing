@@ -1,4 +1,4 @@
-import type { WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import { Mutex } from 'async-mutex';
 import { HathoraCloud } from '@hathora/cloud-sdk-typescript';
 import type { QueuedPlayer, ServerMessage, MatchResult } from './types.js';
@@ -40,8 +40,7 @@ export class Matchmaker {
   async addPlayer(player: QueuedPlayer): Promise<void> {
     const shouldTryMatch = await this.mutex.runExclusive(() => {
       this.queue.set(player.id, player);
-      console.log(`Player "${player.name}" (${player.id}) joined queue`);
-      console.log(this.queue);
+      console.log(`Player "${player.name}" (${player.id}) joined queue (size: ${this.queue.size + 1})`);
       return this.queue.size >= this.playersPerMatch;
     });
 
@@ -109,8 +108,6 @@ export class Matchmaker {
       }
     }
 
-    console.log(playerArray);
-    console.log(roomGroups);
     // don't include room with one player as a group
     if (currentGroup.length === 1) {
       return {
@@ -191,12 +188,15 @@ export class Matchmaker {
         // otherwise requeue
         else {
           console.error(`❌ Room creation failed for group ${i}:`, matchResult.reason?.message);
-          for (const player of roomGroup){
-            if (player.socket.readyState !== player.socket.OPEN) continue;
-            this.queue.set(player.id, player);
-            this.send(player.socket, {type: 'error', message: 'Failed to create match'})
+          await this.mutex.runExclusive(() => {
+            for (const player of roomGroup) {
+              if (player.socket.readyState !== WebSocket.OPEN) continue;
+              this.queue.set(player.id, player);
+            }
+          });
+          for (const player of roomGroup) {
+            this.send(player.socket, { type: 'error', message: 'Failed to create match' });
           }
-          // Schedule retry for re-queued players
           this.scheduleRetry();
         }
       }
@@ -270,7 +270,7 @@ export class Matchmaker {
   }
 
   private send(socket: WebSocket, message: ServerMessage) {
-    if (socket.readyState === socket.OPEN) {
+    if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(message));
     }
   }
