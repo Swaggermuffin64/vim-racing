@@ -183,15 +183,19 @@ function getClientIp(handshake: { headers: Record<string, string | string[] | un
   return handshake.address || 'unknown';
 }
 
+const LOAD_TEST_SECRET = process.env.LOAD_TEST_SECRET || '';
+
 // Connection limit middleware - runs first
 io.use((socket, next) => {
   const ip = getClientIp(socket.handshake);
   
   // Store IP on socket for later cleanup
   socket.data.clientIp = ip;
+
+  const isLoadTest = LOAD_TEST_SECRET && socket.handshake.auth?.loadTestSecret === LOAD_TEST_SECRET;
   
-  // Check and register connection
-  if (!connectionLimiter.addConnection(ip, socket.id)) {
+  // Check and register connection (bypass for load tests)
+  if (!isLoadTest && !connectionLimiter.addConnection(ip, socket.id)) {
     console.log(`🚫 Connection limit exceeded for IP ${ip} (${connectionLimiter.getConnectionCount(ip)} connections)`);
     return next(new Error('Too many connections from your IP. Please try again later.'));
   }
