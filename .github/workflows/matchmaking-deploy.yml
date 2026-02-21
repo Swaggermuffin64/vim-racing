@@ -37,5 +37,7 @@ jobs:
 
       - name: Run smoke tests against production
         working-directory: matchmaking
+        env:
+          MATCHMAKING_URL: wss://vim-racing-matchmaker.fly.dev
         run: npm run smoke-test:prod
 
