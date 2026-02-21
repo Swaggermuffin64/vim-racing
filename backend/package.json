@@ -22,10 +22,12 @@
     "@fastify/rate-limit": "^10.3.0",
     "@hathora/cloud-sdk-typescript": "^2.6.0",
     "fastify": "^5.6.1",
+    "jsonwebtoken": "^9.0.3",
     "socket.io": "^4.8.1",
     "yarn": "^1.22.22"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.7.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"

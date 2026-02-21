@@ -1,10 +1,12 @@
 /**
  * Hathora Authentication Utilities
  * 
- * Handles verification of Hathora auth tokens for Socket.IO connections.
- * In production Hathora environment, tokens are JWTs issued by Hathora's auth service.
+ * Verifies Hathora auth tokens for Socket.IO connections using
+ * cryptographic JWT signature validation.
+ * Requires HATHORA_APP_SECRET to be set for production (Hathora) use.
  */
 
+import jwt from 'jsonwebtoken';
 import { IS_HATHORA } from '../config.js';
 
 export interface HathoraTokenPayload {
@@ -24,94 +26,95 @@ export interface AuthResult {
   error?: string;
 }
 
+const APP_SECRET = process.env.HATHORA_APP_SECRET;
+
+if (!APP_SECRET && IS_HATHORA) {
+  console.error('❌ HATHORA_APP_SECRET is required in Hathora environment for JWT signature verification');
+  process.exit(1);
+}
+
+if (!APP_SECRET) {
+  console.warn('⚠️ HATHORA_APP_SECRET not set — falling back to unverified JWT decode (dev only)');
+}
+
 /**
- * Decode a JWT token without verification (base64 decode the payload).
- * Note: This does NOT verify the signature - use only when token source is trusted
- * or when combined with other verification.
+ * Verify a JWT token's signature using the Hathora app secret.
+ * Falls back to unsigned decode only in local development when no secret is configured.
  */
-function decodeJwtPayload(token: string): HathoraTokenPayload | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) {
+function verifyAndDecodeToken(token: string): HathoraTokenPayload | null {
+  if (APP_SECRET) {
+    try {
+      const payload = jwt.verify(token, APP_SECRET);
+      if (typeof payload === 'object' && payload !== null && 'id' in payload) {
+        return payload as HathoraTokenPayload;
+      }
+      return null;
+    } catch {
       return null;
     }
-    
-    // Decode the payload (second part)
+  }
+
+  // Dev-only fallback: decode without signature verification
+  return decodeJwtPayloadUnsafe(token);
+}
+
+/**
+ * Decode a JWT payload without verifying the signature.
+ * ONLY used in local development when HATHORA_APP_SECRET is not configured.
+ */
+function decodeJwtPayloadUnsafe(token: string): HathoraTokenPayload | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
     const payload = parts[1];
     if (!payload) return null;
-    
-    // Handle base64url encoding
+
     const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
     const jsonPayload = Buffer.from(base64, 'base64').toString('utf-8');
-    return JSON.parse(jsonPayload);
+    const parsed = JSON.parse(jsonPayload);
+
+    if (parsed.exp) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now > parsed.exp) return null;
+    }
+
+    return parsed;
   } catch {
     return null;
   }
 }
 
 /**
- * Check if a JWT token is expired
- */
-function isTokenExpired(payload: HathoraTokenPayload): boolean {
-  if (!payload.exp) return false; // No expiration = not expired
-  const now = Math.floor(Date.now() / 1000);
-  return now > payload.exp;
-}
-
-/**
  * Verify a Hathora auth token and extract the user ID.
  * 
- * For Hathora tokens (anonymous/google/custom), this decodes the JWT and extracts
- * the user ID. The token was signed by Hathora's auth service.
- * 
- * In local development mode (IS_HATHORA=false), this is more permissive.
+ * When HATHORA_APP_SECRET is set, performs full cryptographic verification
+ * (signature + expiration). In local development without a secret, falls back
+ * to unsigned decode with manual expiration check.
  */
 export function verifyHathoraToken(token: string | undefined): AuthResult {
-  // In local development, allow connection without token
   if (!IS_HATHORA && !token) {
     return {
       success: true,
       userId: `local_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
     };
   }
-  
+
   if (!token) {
-    return {
-      success: false,
-      error: 'Authentication token required',
-    };
+    return { success: false, error: 'Authentication token required' };
   }
-  
-  // Decode the JWT payload
-  const payload = decodeJwtPayload(token);
-  
+
+  const payload = verifyAndDecodeToken(token);
+
   if (!payload) {
-    return {
-      success: false,
-      error: 'Invalid token format',
-    };
+    return { success: false, error: 'Invalid or tampered token' };
   }
-  
-  // Check expiration
-  if (isTokenExpired(payload)) {
-    return {
-      success: false,
-      error: 'Token expired',
-    };
-  }
-  
-  // Extract user ID
+
   if (!payload.id) {
-    return {
-      success: false,
-      error: 'Token missing user ID',
-    };
+    return { success: false, error: 'Token missing user ID' };
   }
-  
-  return {
-    success: true,
-    userId: payload.id,
-  };
+
+  return { success: true, userId: payload.id };
 }
 
 /**

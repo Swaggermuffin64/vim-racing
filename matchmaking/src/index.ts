@@ -85,6 +85,7 @@ if (!process.env.HATHORA_APP_ID || !HATHORA_TOKEN) {
   console.error('   Create a .env file with:');
   console.error('   HATHORA_APP_ID=your_app_id');
   console.error('   HATHORA_TOKEN=your_token (or HATHORA_DEV_TOKEN=your_token)');
+  console.error('   HATHORA_APP_SECRET=your_app_secret');
   process.exit(1);
 }
 
