@@ -66,6 +66,11 @@ export function useGameSocket(): UseGameSocketReturn {
       setIsConnected(false);
     });
 
+    socket.on('connect_error', (err) => {
+      console.error('Socket.IO connect error:', err.message);
+      setIsConnecting(false);
+    });
+
     // Room events
     socket.on('room:created', ({ roomId, player }) => {
       setGameState(prev => ({

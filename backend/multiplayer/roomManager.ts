@@ -238,7 +238,6 @@ export class RoomManager {
     const player = room.players.get(playerId);
     if (!player) return;
     player.readyToPlay = true;
-    room.state = 'waiting';
     this.io.to(roomId).emit('room:player_ready', { playerId });
 
     // Check to see if all players are ready
