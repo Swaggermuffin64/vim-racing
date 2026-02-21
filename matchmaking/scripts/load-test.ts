@@ -3,15 +3,15 @@ import WebSocket from 'ws';
 // Configuration from environment
 // Usage:
 //   Local:      NUM_PLAYERS=10 tsx scripts/load-test.ts
-//   Production: PROD=1 NUM_PLAYERS=10 tsx scripts/load-test.ts
-//   Custom:     MATCHMAKING_URL=wss://custom.fly.dev NUM_PLAYERS=10 tsx scripts/load-test.ts
+//   Production: MATCHMAKING_URL=wss://your-matchmaker.example.com NUM_PLAYERS=10 tsx scripts/load-test.ts
 
-const PROD_URL = 'wss://your-matchmaker.example.com';
 const LOCAL_URL = 'ws://localhost:3002';
 
-const MATCHMAKING_URL =
-  process.env.MATCHMAKING_URL ||
-  (process.env.PROD ? PROD_URL : LOCAL_URL);
+const MATCHMAKING_URL = process.env.MATCHMAKING_URL || LOCAL_URL;
+
+if (!process.env.MATCHMAKING_URL) {
+  console.log('ℹ️  No MATCHMAKING_URL set, defaulting to local:', LOCAL_URL);
+}
 const NUM_PLAYERS = parseInt(process.env.NUM_PLAYERS || '10', 10);
 const STAGGER_MS = parseInt(process.env.STAGGER_MS || '500', 10);
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '60000', 10);

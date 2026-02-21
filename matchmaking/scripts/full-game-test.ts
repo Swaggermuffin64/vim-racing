@@ -4,15 +4,16 @@ import { io, Socket } from 'socket.io-client';
 // Configuration from environment
 // Usage:
 //   Local:      NUM_GAMES=5 tsx scripts/full-game-test.ts
-//   Production: PROD=1 NUM_GAMES=5 tsx scripts/full-game-test.ts
-//   Viral test: PROD=1 VIRAL=1 tsx scripts/full-game-test.ts
+//   Production: MATCHMAKING_URL=wss://your-matchmaker.example.com NUM_GAMES=5 tsx scripts/full-game-test.ts
+//   Viral test: MATCHMAKING_URL=wss://your-matchmaker.example.com VIRAL=1 tsx scripts/full-game-test.ts
 
-const PROD_MATCHMAKING_URL = 'wss://your-matchmaker.example.com';
 const LOCAL_MATCHMAKING_URL = 'ws://localhost:3002';
 
-const MATCHMAKING_URL =
-  process.env.MATCHMAKING_URL ||
-  (process.env.PROD ? PROD_MATCHMAKING_URL : LOCAL_MATCHMAKING_URL);
+const MATCHMAKING_URL = process.env.MATCHMAKING_URL || LOCAL_MATCHMAKING_URL;
+
+if (!process.env.MATCHMAKING_URL) {
+  console.log('ℹ️  No MATCHMAKING_URL set, defaulting to local:', LOCAL_MATCHMAKING_URL);
+}
 
 const NUM_GAMES = parseInt(process.env.NUM_GAMES || '5', 10);
 const STAGGER_MS = parseInt(process.env.STAGGER_MS || '200', 10);

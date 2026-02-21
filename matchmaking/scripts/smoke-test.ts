@@ -2,15 +2,15 @@ import WebSocket from 'ws';
 
 // Usage:
 //   Local:      tsx scripts/smoke-test.ts
-//   Production: PROD=1 tsx scripts/smoke-test.ts
-//   Custom:     MATCHMAKING_URL=wss://custom.fly.dev tsx scripts/smoke-test.ts
+//   Production: MATCHMAKING_URL=wss://your-matchmaker.example.com tsx scripts/smoke-test.ts
 
-const PROD_WS_URL = 'wss://your-matchmaker.example.com';
 const LOCAL_WS_URL = 'ws://localhost:3002';
 
-const WS_URL =
-  process.env.MATCHMAKING_URL ||
-  (process.env.PROD ? PROD_WS_URL : LOCAL_WS_URL);
+const WS_URL = process.env.MATCHMAKING_URL || LOCAL_WS_URL;
+
+if (!process.env.MATCHMAKING_URL) {
+  console.log('ℹ️  No MATCHMAKING_URL set, defaulting to local:', LOCAL_WS_URL);
+}
 
 // Convert ws:// → http://, wss:// → https://
 const HTTP_URL = WS_URL.replace(/^ws(s?)/, 'http$1');
