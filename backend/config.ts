@@ -1,11 +1,7 @@
 // Environment configuration
 
-// Detect Hathora environment - HATHORA_PROCESS_ID is always set in Hathora
-export const IS_HATHORA = !!process.env.HATHORA_PROCESS_ID;
-
-// Port configuration
 export const BACKEND_PORT = parseInt(
-  process.env.HATHORA_PORT || process.env.PORT || process.env.BACKEND_PORT || '3001',
+  process.env.PORT || process.env.BACKEND_PORT || '3001',
   10
 );
 
@@ -17,3 +13,5 @@ export const CORS_ORIGINS = [
   ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map(url => url.trim()) : []),
 ];
 
+// Shared secret for verifying match tokens issued by the matchmaker
+export const MATCH_TOKEN_SECRET = process.env.MATCH_TOKEN_SECRET;

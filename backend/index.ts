@@ -11,8 +11,8 @@ import type {
   SocketData 
 } from './multiplayer/types.js';
 import { RoomManager } from './multiplayer/roomManager.js';
-import { IS_HATHORA, BACKEND_PORT, CORS_ORIGINS } from './config.js';
-import { verifyHathoraToken, extractTokenFromHandshake } from './auth/hathoraAuth.js';
+import { BACKEND_PORT, CORS_ORIGINS } from './config.js';
+import { verifyMatchToken, extractTokenFromHandshake } from './auth/auth.js';
 import { socketRateLimiter } from './rateLimit/socketRateLimiter.js';
 import { connectionLimiter } from './rateLimit/connectionLimiter.js';
 import { 
@@ -68,7 +68,7 @@ function shuffle<T>(array: T[]): T[] {
   return result;
 }
 
-// Health check
+// Basic root health check (used by allowList for rate limiting)
 fastify.get('/', async () => {
   return { status: 'ok', service: 'vim-racing' };
 });
@@ -188,13 +188,12 @@ io.use((socket, next) => {
 });
 
 // Authentication middleware for Socket.IO
-// Verifies Hathora auth tokens before allowing connections
+// Verifies match tokens for quick-match connections; allows direct connections for private rooms
 io.use((socket, next) => {
   const token = extractTokenFromHandshake(socket.handshake);
-  const authResult = verifyHathoraToken(token);
+  const authResult = verifyMatchToken(token);
   
   if (!authResult.success) {
-    // Remove from connection limiter since auth failed
     const ip = socket.data.clientIp || 'unknown';
     connectionLimiter.removeConnection(ip, socket.id);
     
@@ -202,8 +201,6 @@ io.use((socket, next) => {
     return next(new Error(authResult.error || 'Authentication failed'));
   }
   
-  // Store the authenticated user ID on the socket
-  // userId is guaranteed to be present when success is true
   socket.data.userId = authResult.userId!;
   console.log(`🔒 Auth success: userId=${authResult.userId}`);
   next();
@@ -211,6 +208,16 @@ io.use((socket, next) => {
 
 // Initialize room manager
 const roomManager = new RoomManager(io);
+
+// Memory-aware health check for Fly.io auto-restart
+const MEMORY_LIMIT_MB = 200;
+fastify.get('/health', async (request, reply) => {
+  const memMB = process.memoryUsage().rss / 1024 / 1024;
+  if (memMB > MEMORY_LIMIT_MB) {
+    return reply.status(503).send({ status: 'unhealthy', memMB: Math.round(memMB), rooms: roomManager.roomCount });
+  }
+  return { status: 'ok', memMB: Math.round(memMB), rooms: roomManager.roomCount };
+});
 
 // Helper to wrap socket event handlers with rate limiting
 type SocketType = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -430,14 +437,9 @@ io.on('connection', (socket) => {
 
 console.log(`\n🏎️  Vim Racing BACKEND running at http://localhost:${BACKEND_PORT}`);
 console.log(`🔌 WebSocket server ready`);
-if (IS_HATHORA) {
-  console.log(`🎮 Running in Hathora environment`);
-  console.log(`   Process ID: ${process.env.HATHORA_PROCESS_ID}`);
-  console.log(`   HATHORA_PORT: ${process.env.HATHORA_PORT || '(not set)'}`);
-}
 console.log('');
 
-// Graceful shutdown handling (important for Hathora scaling)
+// Graceful shutdown handling
 const shutdown = async (signal: string) => {
   console.log(`\n${signal} received, shutting down gracefully...`);
   
@@ -457,3 +459,13 @@ const shutdown = async (signal: string) => {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+  process.exit(1);
+});

@@ -63,7 +63,7 @@ export interface SocketData {
   playerId: string;
   playerName: string;
   roomId?: string;
-  /** Authenticated user ID from Hathora token */
+  /** Authenticated user ID from match token or local ID */
   userId?: string;
   /** Client IP address for connection limiting */
   clientIp?: string;

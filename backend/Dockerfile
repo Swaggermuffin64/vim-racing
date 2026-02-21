@@ -36,16 +36,12 @@ COPY --from=builder /app/dist ./dist
 # Switch to non-root user
 USER nodejs
 
-# Hathora injects HATHORA_PORT at runtime
-# For local testing, default to 3001
 ENV PORT=3001
 
-# Expose port (Hathora will override via HATHORA_PORT)
 EXPOSE 3001
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:${HATHORA_PORT:-${PORT:-3001}}/ || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3001}/health || exit 1
 
 # Start the server
 CMD ["node", "dist/index.js"]

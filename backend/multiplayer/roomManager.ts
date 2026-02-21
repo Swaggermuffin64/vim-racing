@@ -10,8 +10,6 @@ import type {
 } from './types.js';
 import { generateDeleteTasks, generatePositionTasks } from '../tasks.js';
 import type { Task } from '../types.js';
-import { IS_HATHORA } from '../config.js';
-import { updateLobbyState } from './hathoraLobby.js';
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -40,30 +38,8 @@ export class RoomManager {
   private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
   private WAITING_ROOM_TIMEOUT_MS_PRIVATE = 5 * 60 * 1000; // 5 minutes for private rooms (friends coordinating)
   private WAITING_ROOM_TIMEOUT_MS_PUBLIC = 30 * 1000; // 30 seconds for public rooms (auto-ready should fire in ~2s)
-  private STARTUP_IDLE_TIMEOUT_MS = 30 * 1000; // 30 seconds to wait for first connection in Hathora
-  private startupTimer: NodeJS.Timeout | null = null;
-  
   constructor(io: GameServer) {
     this.io = io;
-    
-    // In Hathora environment, exit if no one connects within timeout
-    if (IS_HATHORA) {
-      console.log(`⏱️ Hathora startup timeout: ${this.STARTUP_IDLE_TIMEOUT_MS / 1000}s to receive first connection`);
-      this.startupTimer = setTimeout(() => {
-        if (this.rooms.size === 0) {
-          console.log(`⏰ No rooms created within startup timeout - exiting Hathora process`);
-          process.exit(0);
-        }
-      }, this.STARTUP_IDLE_TIMEOUT_MS);
-    }
-  }
-  
-  private cancelStartupTimer(): void {
-    if (this.startupTimer) {
-      clearTimeout(this.startupTimer);
-      this.startupTimer = null;
-      console.log(`✅ Startup timer cancelled - room activity detected`);
-    }
   }
 
   private scheduleWaitingRoomTimeout(roomId: string, isPublic: boolean): void {
@@ -107,8 +83,6 @@ export class RoomManager {
   createRoom(socket: GameSocket, playerName: string, externalRoomId?: string, isPublic: boolean = false): GameRoom | null {
     console.log(`📥 createRoom called: playerName=${playerName}, externalRoomId=${externalRoomId}, isPublic=${isPublic} (type: ${typeof isPublic})`);
     
-    // Cancel startup timer since we have activity
-    this.cancelStartupTimer();
     const roomId = externalRoomId || this.generateRoomId();
 
     if (this.rooms.has(roomId)) {
@@ -161,15 +135,6 @@ export class RoomManager {
 
     console.log(`🏠 Room ${roomId} created by ${playerName} (${isPublic ? 'public' : 'private'})`);
     
-    // Update Hathora lobby state for matchmaking
-    if (isPublic) {
-      updateLobbyState(roomId, {
-        status: 'waiting',
-        playerCount: 1,
-        maxPlayers: MAX_PLAYERS_PER_ROOM,
-      });
-    }
-    
     // Schedule waiting room timeout - room will be destroyed if race doesn't start
     this.scheduleWaitingRoomTimeout(roomId, isPublic);
     
@@ -178,9 +143,6 @@ export class RoomManager {
     
 
   joinRoom(socket: GameSocket, roomId: string, playerName: string): GameRoom | null {
-    // Cancel startup timer since we have activity
-    this.cancelStartupTimer();
-
     // Leave any existing room to prevent ghost players
     if (socket.data.roomId) {
       this.leaveRoom(socket);
@@ -226,15 +188,6 @@ export class RoomManager {
 
     // Notify other players (not the player who joined)
     socket.to(roomId).emit('room:player_joined', { player });
-    
-    // Update Hathora lobby state - room is now full if 2 players
-    if (room.isPublic) {
-      updateLobbyState(roomId, {
-        status: room.players.size >= MAX_PLAYERS_PER_ROOM ? 'racing' : 'waiting',
-        playerCount: room.players.size,
-        maxPlayers: MAX_PLAYERS_PER_ROOM,
-      });
-    }
     
     return room;
   }
@@ -314,15 +267,6 @@ export class RoomManager {
     room.countdownStart = Date.now();
 
     console.log(`⏱️ Starting countdown for room ${roomId}`);
-    
-    // Update Hathora lobby state
-    if (room.isPublic) {
-      updateLobbyState(roomId, {
-        status: 'countdown',
-        playerCount: room.players.size,
-        maxPlayers: MAX_PLAYERS_PER_ROOM,
-      });
-    }
 
     // Countdown: 3, 2, 1, GO!
     let seconds = 3;
@@ -614,23 +558,6 @@ export class RoomManager {
     }
 
     console.log(`✅ Room ${roomId} destroyed. Remaining rooms: ${this.rooms.size}`);
-
-    // For Hathora: if no rooms remain and we're in Hathora environment, exit gracefully
-    console.log(`🔍 Checking Hathora exit condition: IS_HATHORA=${IS_HATHORA}, rooms.size=${this.rooms.size}`);
-    
-    if (this.rooms.size === 0 && IS_HATHORA) {
-      console.log(`🎮 No active rooms remaining in Hathora environment - scheduling process exit in 5s`);
-      // Give a short delay for any pending operations
-      setTimeout(() => {
-        console.log(`⏰ Exit timer fired. Current rooms: ${this.rooms.size}`);
-        if (this.rooms.size === 0) {
-          console.log(`👋 Exiting Hathora process (no active rooms)`);
-          process.exit(0);
-        } else {
-          console.log(`🔄 New room created during exit delay, cancelling exit`);
-        }
-      }, 5000);
-    }
   }
 
   resetRoom(socket: GameSocket): void {
@@ -705,6 +632,10 @@ export class RoomManager {
     const newRoom = this.createRoom(socket, playerName, undefined, true);
     if (!newRoom) return null;
     return { room: newRoom, isNewRoom: true };
+  }
+
+  get roomCount(): number {
+    return this.rooms.size;
   }
 
   getRoom(roomId: string): GameRoom | undefined {

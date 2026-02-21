@@ -32,7 +32,6 @@ WARP.md
 
 # Deployment configs (not needed in container)
 fly.toml
-hathora.yml
 docker-compose.yml
 
 # Testing
