@@ -3,10 +3,9 @@ import React, { useState, useEffect } from 'react';
 interface LobbyProps {
   isConnected: boolean;
   isConnecting?: boolean;
-  useHathora?: boolean; // In Hathora mode, connection happens on room create/join
-  initialMode?: 'quick' | 'private' | null; // Pre-select a mode from URL params
+  initialMode?: 'quick' | 'private' | null;
   error: string | null;
-  queuePosition?: number | null; // Position in matchmaking queue
+  queuePosition?: number | null;
   onCreateRoom: (playerName: string) => void;
   onJoinRoom: (roomId: string, playerName: string) => void;
   onQuickMatch: (playerName: string) => void;
@@ -231,7 +230,6 @@ const styles: Record<string, React.CSSProperties> = {
 export const Lobby: React.FC<LobbyProps> = ({
   isConnected,
   isConnecting = false,
-  useHathora = false,
   initialMode = null,
   error,
   queuePosition = null,
@@ -266,9 +264,8 @@ export const Lobby: React.FC<LobbyProps> = ({
     }
   };
 
-  const handleJoin = () => {
+    const handleJoin = () => {
     if (playerName.trim() && roomCode.trim()) {
-      // Pass room code as-is (Hathora IDs are case-sensitive)
       onJoinRoom(roomCode.trim(), playerName.trim());
     }
   };
@@ -280,21 +277,15 @@ export const Lobby: React.FC<LobbyProps> = ({
   };
 
   const isLoading = isConnecting;
-  
-  // In Hathora mode, we don't need to be connected before creating/joining
-  // because the connection happens as part of that flow
-  const canInteract = useHathora ? true : isConnected;
+  const canInteract = isConnected;
 
   const getStatusColor = () => {
     if (isConnecting) return colors.warning;
-    if (useHathora || isConnected) return colors.success;
+    if (isConnected) return colors.success;
     return colors.textMuted;
   };
 
   const getStatusText = () => {
-    if (useHathora) {
-      return isConnecting ? 'Connecting...' : 'Ready to play';
-    }
     return isConnected ? 'Connected' : 'Connecting...';
   };
 

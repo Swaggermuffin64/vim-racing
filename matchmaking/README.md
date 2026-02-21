@@ -1,6 +1,6 @@
 # Vim Racing Matchmaking Service
 
-A lightweight WebSocket-based matchmaking server that queues players and creates Hathora rooms when matches are found.
+A lightweight WebSocket-based matchmaking server that queues players and assigns them to game rooms on the Fly.io game server.
 
 ## How It Works
 
@@ -13,12 +13,12 @@ A lightweight WebSocket-based matchmaking server that queues players and creates
 │   Player B  │ ─────────────────────────► │  - FIFO matching    │
 └─────────────┘                            └─────────┬───────────┘
                                                      │
-                                     3. Create Hathora room
-                                     4. Send roomId + URL to both
+                                     3. Generate roomId + sign token
+                                     4. Send roomId + URL + token to both
                                                      ▼
 ┌─────────────┐                            ┌─────────────────────┐
-│   Player A  │ ◄───── 5. Connect ───────► │   Hathora Room      │
-│   Player B  │        to game server      │   (game server)     │
+│   Player A  │ ◄───── 5. Connect ───────► │   Game Server       │
+│   Player B  │        to game server      │   (Fly.io)          │
 └─────────────┘                            └─────────────────────┘
 ```
 
@@ -31,11 +31,10 @@ A lightweight WebSocket-based matchmaking server that queues players and creates
 
 2. Set environment variables:
    ```bash
-   export HATHORA_APP_ID=your_app_id
-   export HATHORA_DEV_TOKEN=your_dev_token
+   export GAME_SERVER_URL=http://localhost:3001
+   export MATCH_TOKEN_SECRET=your_shared_secret
    export PORT=3002                    # optional, default 3002
    export PLAYERS_PER_MATCH=2          # optional, default 2
-   export HATHORA_REGION=Seattle       # optional, default Seattle
    ```
 
 3. Run in development:
@@ -55,7 +54,7 @@ A lightweight WebSocket-based matchmaking server that queues players and creates
 
 ```typescript
 // Join the matchmaking queue
-{ type: 'queue:join', playerName: string, region?: string }
+{ type: 'queue:join', playerName: string }
 
 // Leave the queue
 { type: 'queue:leave' }
@@ -76,12 +75,13 @@ A lightweight WebSocket-based matchmaking server that queues players and creates
 // Confirmed queue leave
 { type: 'queue:left' }
 
-// Match found! Connect to this Hathora room
+// Match found! Connect to the game server
 { 
   type: 'match:found', 
   roomId: string, 
   connectionUrl: string,
-  players: Array<{ id: string, name: string }>
+  players: Array<{ id: string, name: string }>,
+  token?: string  // signed JWT for game server auth
 }
 
 // Error occurred
@@ -118,8 +118,7 @@ function quickMatch(playerName: string) {
       case 'match:found':
         console.log(`Match found! Room: ${msg.roomId}`);
         ws.close();
-        // Connect to the Hathora game server
-        connectToGameServer(msg.connectionUrl, msg.roomId, playerName);
+        connectToGameServer(msg.connectionUrl, msg.roomId, playerName, msg.token);
         break;
         
       case 'error':
@@ -132,12 +131,9 @@ function quickMatch(playerName: string) {
 
 ## Deployment
 
-### Railway / Render / Fly.io
+### Fly.io
 
-1. Build the project: `npm run build`
-2. Deploy with the following:
-   - Start command: `npm start`
-   - Environment variables: `HATHORA_APP_ID`, `HATHORA_DEV_TOKEN`
+Deployed automatically via GitHub Actions on push to `main`. See `.github/workflows/matchmaking-deploy.yml`.
 
 ### Docker
 
@@ -145,8 +141,8 @@ function quickMatch(playerName: string) {
 npm run build
 docker build -t vim-racing-matchmaking .
 docker run -p 3002:3002 \
-  -e HATHORA_APP_ID=your_app_id \
-  -e HATHORA_DEV_TOKEN=your_dev_token \
+  -e GAME_SERVER_URL=https://your-game-server.fly.dev \
+  -e MATCH_TOKEN_SECRET=your_secret \
   vim-racing-matchmaking
 ```
 
@@ -229,4 +225,3 @@ NUM_PLAYERS=4 STAGGER_MS=1000 npm run load-test:local
      Max: 5200ms
 ==================================================
 ```
-

@@ -141,6 +141,19 @@ fastify.get('/api/task/practice', async () => {
   };
 });
 
+// Memory-aware health check for Fly.io auto-restart
+const MEMORY_LIMIT_MB = 200;
+let roomManager: RoomManager | null = null;
+
+fastify.get('/health', async (request, reply) => {
+  const memMB = process.memoryUsage().rss / 1024 / 1024;
+  const rooms = roomManager?.roomCount ?? 0;
+  if (memMB > MEMORY_LIMIT_MB) {
+    return reply.status(503).send({ status: 'unhealthy', memMB: Math.round(memMB), rooms });
+  }
+  return { status: 'ok', memMB: Math.round(memMB), rooms };
+});
+
 // Start Fastify first, then attach Socket.IO
 await fastify.listen({ port: BACKEND_PORT, host: '0.0.0.0' });
 
@@ -206,18 +219,8 @@ io.use((socket, next) => {
   next();
 });
 
-// Initialize room manager
-const roomManager = new RoomManager(io);
-
-// Memory-aware health check for Fly.io auto-restart
-const MEMORY_LIMIT_MB = 200;
-fastify.get('/health', async (request, reply) => {
-  const memMB = process.memoryUsage().rss / 1024 / 1024;
-  if (memMB > MEMORY_LIMIT_MB) {
-    return reply.status(503).send({ status: 'unhealthy', memMB: Math.round(memMB), rooms: roomManager.roomCount });
-  }
-  return { status: 'ok', memMB: Math.round(memMB), rooms: roomManager.roomCount };
-});
+// Initialize room manager (assigned to the variable declared before listen)
+roomManager = new RoomManager(io);
 
 // Helper to wrap socket event handlers with rate limiting
 type SocketType = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;

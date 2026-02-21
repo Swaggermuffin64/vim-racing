@@ -208,8 +208,7 @@ async function matchmakingFlowTests() {
     pass('Both players connected');
 
     // Both join queue and wait for match:found
-    // Hathora room creation involves an API call + polling (up to 22.5s worst case),
-    // so we use a longer timeout than the default for this phase.
+    // Room assignment is fast now but keep a generous timeout for network latency.
     const matchTimeoutMs = Math.max(TIMEOUT_MS, 30000);
     const match1Promise = waitForMessage(ws1, 'match:found', { rejectOnError: true });
     const match2Promise = waitForMessage(ws2, 'match:found', { rejectOnError: true });

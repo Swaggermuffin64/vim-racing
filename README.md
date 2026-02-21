@@ -14,15 +14,14 @@ Competitive vim motion racing. Practice alone or race others in real time.
 ## Tech Stack
 
 - **Frontend:** React 19, Vite, CodeMirror 6 with [@replit/codemirror-vim](https://github.com/replit/codemirror-vim)
-- **Backend:** Fastify, Socket.IO
-- **Matchmaking:** Node.js, WebSocket (ws), [Hathora Cloud](https://hathora.dev)
+- **Backend (game server):** Fastify, Socket.IO, deployed on [Fly.io](https://fly.io)
+- **Matchmaking:** Node.js, WebSocket (ws), deployed on [Fly.io](https://fly.io)
 
 ## Local Development
 
 ### Prerequisites
 
 - Node.js 20+
-- A [Hathora](https://console.hathora.dev) account (for multiplayer; solo practice works without it)
 
 ### Environment Variables
 
@@ -32,23 +31,20 @@ Each service needs its own `.env` file:
 
 ```
 VITE_BACKEND_URL=http://localhost:3001
-VITE_USE_HATHORA=false
+VITE_MATCHMAKING_URL=ws://localhost:3002
 ```
 
 **backend/.env**
 
 ```
-HATHORA_APP_ID=your_app_id
-HATHORA_TOKEN=your_token
-HATHORA_APP_SECRET=your_app_secret
+MATCH_TOKEN_SECRET=any-shared-secret-for-dev
 ```
 
 **matchmaking/.env**
 
 ```
-HATHORA_APP_ID=your_app_id
-HATHORA_TOKEN=your_token
-HATHORA_APP_SECRET=your_app_secret
+MATCH_TOKEN_SECRET=any-shared-secret-for-dev
+GAME_SERVER_URL=http://localhost:3001
 ```
 
 ### Running
@@ -66,7 +62,11 @@ cd backend && npm install && npm run dev
 cd matchmaking && npm install && npm run dev
 ```
 
-Solo practice works with just the frontend and backend. Matchmaking is only needed for quick match multiplayer.
+Solo practice works with just the frontend and matchmaking server. Matchmaking is only needed for quick match multiplayer.
+
+## Deployment
+
+Both the backend and matchmaking services deploy to Fly.io via GitHub Actions on push to `main`. See `.github/workflows/` for details.
 
 ## License
 

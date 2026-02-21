@@ -1,29 +1,19 @@
 import { WebSocket } from 'ws';
+import { randomBytes } from 'crypto';
 import { Mutex } from 'async-mutex';
-import { HathoraCloud } from '@hathora/cloud-sdk-typescript';
 import type { QueuedPlayer, ServerMessage, MatchResult } from './types.js';
-
-function createHathoraClient() {
-  const appId = process.env.HATHORA_APP_ID;
-  const devToken = process.env.HATHORA_TOKEN;
-
-  if (!appId || !devToken) {
-    throw new Error('HATHORA_APP_ID and HATHORA_TOKEN must be set');
-  }
-
-  return new HathoraCloud({ appId, hathoraDevToken: devToken });
-}
+import { signMatchToken } from './auth.js';
 
 export class Matchmaker {
   private queue: Map<string, QueuedPlayer> = new Map();
   private mutex = new Mutex();
-  private readonly hathoraClient: HathoraCloud;
+  private readonly gameServerUrl: string;
   private readonly playersPerMatch: number;
   private retryScheduled: boolean = false;
-  private readonly retryDelayMs: number = 3000; // Wait 3s before retrying after rate limit
+  private readonly retryDelayMs: number = 3000;
 
-  constructor(options?: { playersPerMatch?: number; retryDelayMs?: number }) {
-    this.hathoraClient = createHathoraClient();
+  constructor(options?: { playersPerMatch?: number; retryDelayMs?: number; gameServerUrl?: string }) {
+    this.gameServerUrl = options?.gameServerUrl || process.env.GAME_SERVER_URL || 'http://localhost:3001';
     this.playersPerMatch = options?.playersPerMatch ?? 2;
     this.retryDelayMs = options?.retryDelayMs ?? 3000;
   }
@@ -31,6 +21,7 @@ export class Matchmaker {
   start() {
     console.log('🎮 Matchmaker started');
     console.log(`   Players per match: ${this.playersPerMatch}`);
+    console.log(`   Game server: ${this.gameServerUrl}`);
   }
 
   stop() {
@@ -79,7 +70,6 @@ export class Matchmaker {
   }
 
   private scheduleRetry(): void {
-    // Prevent multiple concurrent retries
     if (this.retryScheduled) return;
     
     this.retryScheduled = true;
@@ -101,7 +91,6 @@ export class Matchmaker {
     for (let i = 0; i < this.queue.size; i++) {
       const currPlayer = playerArray[i];
       currentGroup.push(currPlayer);
-      // push to roomGroups when max Players hit
       if (currentGroup.length === this.playersPerMatch) {
         roomGroups.push(currentGroup);
         currentGroup = [];
@@ -122,14 +111,10 @@ export class Matchmaker {
       groupedPlayers: playerArray
     };
   }
-  
-  
 
-  
   private async tryMatch() {
     const tryMatchStartTime = performance.now();
 
-    // Short lock: Get room groups, matched players, and remove them from queue
     const result = await this.mutex.runExclusive(() => {
       if (this.queue.size < this.playersPerMatch) {
         return null;
@@ -137,7 +122,6 @@ export class Matchmaker {
 
       const { roomGroups, groupedPlayers } = this.groupPlayers();
 
-      // Remove them from queue immediately to prevent double-matching
       for (const player of groupedPlayers) {
         this.queue.delete(player.id);
       }
@@ -156,48 +140,26 @@ export class Matchmaker {
     }
     console.log(`🎯 Matching ${groupedPlayers.length} players:`, groupedPlayers.map((p) => p.name).join(', '));
     console.log(`⏱️ [tryMatch] Grouped players (${(performance.now() - tryMatchStartTime).toFixed(0)}ms)`);
-    // No lock: create rooms in parallel (this can take several seconds)
 
     try {
-      // Create Hathora rooms for all groups in parallel
-      const roomCreateStartTime = performance.now();
-      const matchResults = await Promise.allSettled(
-        roomGroups.map((roomGroup) => this.createHathoraRoom(roomGroup))
-      );
-      console.log(`⏱️ [tryMatch] All rooms created (${(performance.now() - roomCreateStartTime).toFixed(0)}ms for ${roomGroups.length} room(s))`);
+      const matchResults = roomGroups.map((roomGroup) => this.assignRoom(roomGroup));
+      console.log(`⏱️ [tryMatch] All rooms assigned (${(performance.now() - tryMatchStartTime).toFixed(0)}ms for ${roomGroups.length} room(s))`);
 
-      // Notify all matched players in each group
       for (let i = 0; i < roomGroups.length; i++) {
         const roomGroup = roomGroups[i];
         const matchResult = matchResults[i];
 
-        //if successful Hathora room creation, notify players
-        if (matchResult.status === "fulfilled") {
-          console.log(`✅ Match created: ${matchResult.value.roomId}`);
+        console.log(`✅ Match created: ${matchResult.roomId}`);
 
-          for (const player of roomGroup) {
-            this.send(player.socket, {
-              type: 'match:found',
-              roomId: matchResult.value.roomId,
-              connectionUrl: matchResult.value.connectionUrl,
-              players: matchResult.value.players,
-            });
-          }
-
-        }
-        // otherwise requeue
-        else {
-          console.error(`❌ Room creation failed for group ${i}:`, matchResult.reason?.message);
-          await this.mutex.runExclusive(() => {
-            for (const player of roomGroup) {
-              if (player.socket.readyState !== WebSocket.OPEN) continue;
-              this.queue.set(player.id, player);
-            }
+        for (const player of roomGroup) {
+          const token = signMatchToken(player.id, matchResult.roomId);
+          this.send(player.socket, {
+            type: 'match:found',
+            roomId: matchResult.roomId,
+            connectionUrl: matchResult.connectionUrl,
+            players: matchResult.players,
+            ...(token ? { token } : {}),
           });
-          for (const player of roomGroup) {
-            this.send(player.socket, { type: 'error', message: 'Failed to create match' });
-          }
-          this.scheduleRetry();
         }
       }
 
@@ -205,7 +167,6 @@ export class Matchmaker {
     } catch (err: any) {
       console.error('❌ Failed to create match:', err?.message);
 
-      // Short lock: put players back in queue on failure
       await this.mutex.runExclusive(() => {
         for (const player of groupedPlayers) {
           this.queue.set(player.id, player);
@@ -216,55 +177,16 @@ export class Matchmaker {
         }
       });
       
-      // Schedule retry for re-queued players
       this.scheduleRetry();
     }
   }
 
-  private async createHathoraRoom(players: QueuedPlayer[]): Promise<MatchResult> {
-    const startTime = performance.now();
-
-    // Create room using Rooms API (requires dev token)
-    const room = await this.hathoraClient.roomsV2.createRoom({
-      region: 'Chicago',
-      roomConfig: JSON.stringify({
-        quickMatch: true,
-        matchedPlayers: players.map((p) => ({ id: p.id, name: p.name })),
-      }),
-    });
-
-    const roomId = room.roomId;
-    console.log(`🏠 Hathora room created: ${roomId} (API call took ${(performance.now() - startTime).toFixed(0)}ms)`);
-
-    // Wait for room to be ready
-    const pollStartTime = performance.now();
-    let connectionUrl: string | null = null;
-    let pollAttempts = 0;
-    for (let i = 0; i < 15; i++) {
-      pollAttempts++;
-      try {
-        const connectionInfo = await this.hathoraClient.roomsV2.getConnectionInfo(roomId);
-        if (connectionInfo.status === 'active' && connectionInfo.exposedPort) {
-          const { host, port } = connectionInfo.exposedPort;
-          connectionUrl = `https://${host}:${port}`;
-          break;
-        }
-      } catch {
-        // Room not ready yet
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-    }
-
-    if (!connectionUrl) {
-      console.error(`⏱️ [createHathoraRoom] Room ${roomId} failed to become ready after ${pollAttempts} polls (${(performance.now() - pollStartTime).toFixed(0)}ms)`);
-      throw new Error('Room failed to become ready');
-    }
-
-    console.log(`⏱️ [createHathoraRoom] Room ${roomId} ready after ${pollAttempts} poll(s) (poll: ${(performance.now() - pollStartTime).toFixed(0)}ms, total: ${(performance.now() - startTime).toFixed(0)}ms)`);
+  private assignRoom(players: QueuedPlayer[]): MatchResult {
+    const roomId = randomBytes(8).toString('hex');
 
     return {
       roomId,
-      connectionUrl,
+      connectionUrl: this.gameServerUrl,
       players: players.map((p) => ({ id: p.id, name: p.name })),
     };
   }
@@ -275,4 +197,3 @@ export class Matchmaker {
     }
   }
 }
-

@@ -343,7 +343,6 @@ const MultiplayerGame: React.FC = () => {
         <Lobby
           isConnected={isConnected}
           isConnecting={isConnecting}
-          useHathora={import.meta.env.VITE_USE_HATHORA === 'true'}
           initialMode={initialMode}
           error={error}
           queuePosition={queuePosition}
@@ -357,7 +356,7 @@ const MultiplayerGame: React.FC = () => {
   }
 
   if (gameState.roomState === 'waiting') {
-    // In quick play, leaving should fully clean up the Hathora socket
+    // In quick play, leaving should fully clean up the matchmaking state
     // and reset to idle so the player can re-queue from the lobby.
     const handleLeave = initialMode === 'quick' ? cancelQuickMatch : leaveRoom;
 

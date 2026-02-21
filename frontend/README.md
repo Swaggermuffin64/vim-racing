@@ -27,6 +27,5 @@ Create a `.env` file in the frontend directory:
 
 ```bash
 VITE_BACKEND_URL=http://localhost:3001
-VITE_USE_HATHORA=false
-VITE_HATHORA_APP_ID=your-app-id
+VITE_MATCHMAKING_URL=ws://localhost:3002
 ```

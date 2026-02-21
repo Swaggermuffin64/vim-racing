@@ -13,7 +13,6 @@
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/theme-one-dark": "^6.1.3",
-    "@hathora/cloud-sdk-typescript": "^2.25.6",
     "@replit/codemirror-vim": "^6.3.0",
     "codemirror": "^6.0.2",
     "react": "^19.2.0",

@@ -54,7 +54,7 @@ const stats = {
   matchmakingConnected: 0,
   matchmakingQueued: 0,
   matchmakingMatched: 0,
-  requeued: 0, // Times players were re-queued due to Hathora rate limits
+  requeued: 0,
   gameServerConnected: 0,
   gamesStarted: 0,
   gamesCompleted: 0,
@@ -157,10 +157,10 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
           }
 
           case 'error':
-            // "re-queued" means Hathora rate limit hit - stay connected and wait
+            // "re-queued" means room creation failed - stay connected and wait
             if (msg.message.includes('re-queued') || msg.message.includes('Failed to create match')) {
               stats.requeued++;
-              console.log(`[${playerName}] 🔄 Re-queued (Hathora rate limit), waiting...`);
+              console.log(`[${playerName}] 🔄 Re-queued, waiting...`);
               // Stay connected - matchmaker will retry
             } else {
               // Actual fatal error
@@ -184,7 +184,7 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
       // Don't cleanup here - we close intentionally after match
     });
 
-    // Step 2: Connect to Hathora game server
+    // Step 2: Connect to game server
     function connectToGameServer(roomId: string, connectionUrl: string) {
       console.log(`[${playerName}] 🎮 Connecting to game server: ${connectionUrl}`);
 
