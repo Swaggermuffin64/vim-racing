@@ -138,7 +138,7 @@ function connectWs(): Promise<WebSocket> {
   });
 }
 
-function waitForMessage(ws: WebSocket, type: string): Promise<any> {
+function waitForMessage(ws: WebSocket, type: string, opts?: { rejectOnError?: boolean }): Promise<any> {
   return new Promise((resolve, reject) => {
     const onMessage = (data: WebSocket.Data) => {
       try {
@@ -146,6 +146,9 @@ function waitForMessage(ws: WebSocket, type: string): Promise<any> {
         if (msg.type === type) {
           ws.off('message', onMessage);
           resolve(msg);
+        } else if (opts?.rejectOnError && msg.type === 'error') {
+          ws.off('message', onMessage);
+          reject(new Error(`Server error: ${msg.message || JSON.stringify(msg)}`));
         }
       } catch { /* ignore non-JSON */ }
     };
@@ -205,13 +208,29 @@ async function matchmakingFlowTests() {
     pass('Both players connected');
 
     // Both join queue and wait for match:found
-    const match1Promise = waitForMessage(ws1, 'match:found');
-    const match2Promise = waitForMessage(ws2, 'match:found');
+    // Hathora room creation involves an API call + polling (up to 22.5s worst case),
+    // so we use a longer timeout than the default for this phase.
+    const matchTimeoutMs = Math.max(TIMEOUT_MS, 30000);
+    const match1Promise = waitForMessage(ws1, 'match:found', { rejectOnError: true });
+    const match2Promise = waitForMessage(ws2, 'match:found', { rejectOnError: true });
 
     ws1.send(JSON.stringify({ type: 'queue:join', playerName: 'SmokeTest_P1' }));
     ws2.send(JSON.stringify({ type: 'queue:join', playerName: 'SmokeTest_P2' }));
 
-    const [match1, match2] = await withTimeout(
+    const matchWithTimeout = <T>(promise: Promise<T>, label: string): Promise<T> => {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${matchTimeoutMs}ms`)),
+          matchTimeoutMs,
+        );
+        promise.then(
+          (val) => { clearTimeout(timer); resolve(val); },
+          (err) => { clearTimeout(timer); reject(err); },
+        );
+      });
+    };
+
+    const [match1, match2] = await matchWithTimeout(
       Promise.all([match1Promise, match2Promise]),
       'Wait for match:found',
     );
