@@ -226,7 +226,7 @@ export class Matchmaker {
 
     // Create room using Rooms API (requires dev token)
     const room = await this.hathoraClient.roomsV2.createRoom({
-      region: 'Washington_DC',
+      region: 'Chicago',
       roomConfig: JSON.stringify({
         quickMatch: true,
         matchedPlayers: players.map((p) => ({ id: p.id, name: p.name })),

@@ -1,5 +1,5 @@
 app = "vim-racing-matchmaker"
-primary_region = "sjc"  # San Jose - close to Seattle Hathora region
+primary_region = "ord"  # Chicago - close to Chicago Hathora region
 
 # IMPORTANT: This service uses an in-memory matchmaking queue, so it MUST run
 # on a single machine. Multiple machines = separate queues = players can't match.
@@ -11,7 +11,7 @@ primary_region = "sjc"  # San Jose - close to Seattle Hathora region
 [env]
   PORT = "8080"
   PLAYERS_PER_MATCH = "2"
-  HATHORA_REGION = "Seattle"
+  HATHORA_REGION = "Chicago"
   FRONTEND_URL = "https://vimgym.app,https://www.vimgym.app"
 
 [http_service]
