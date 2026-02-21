@@ -96,39 +96,47 @@ const matchmaker = new Matchmaker({
 const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   const corsHeaders = getCorsHeaders(req);
 
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, corsHeaders);
-    res.end();
-    return;
-  }
+  try {
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, corsHeaders);
+      res.end();
+      return;
+    }
 
-  // Health check endpoint (exempt from rate limiting)
-  if (req.url === '/' && req.method === 'GET') {
-    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', service: 'vim-racing-matchmaking' }));
-    return;
-  }
+    // Health check endpoint (exempt from rate limiting)
+    if (req.url === '/' && req.method === 'GET') {
+      res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', service: 'vim-racing-matchmaking' }));
+      return;
+    }
 
-  // Apply HTTP rate limiting to all non-health-check routes
-  const clientIp = getClientIp(req);
-  if (!httpRateLimiter.check(clientIp)) {
-    res.writeHead(429, { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' });
-    res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
-    return;
-  }
+    // Apply HTTP rate limiting to all non-health-check routes
+    const clientIp = getClientIp(req);
+    if (!httpRateLimiter.check(clientIp)) {
+      res.writeHead(429, { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' });
+      res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
+      return;
+    }
 
-  // Practice session endpoint
-  if (req.url === '/api/task/practice' && req.method === 'GET') {
-    const session = generatePracticeSession(10);
-    res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(session));
-    return;
-  }
+    // Practice session endpoint
+    if (req.url === '/api/task/practice' && req.method === 'GET') {
+      const session = generatePracticeSession(10);
+      res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(session));
+      return;
+    }
 
-  // 404 for unknown routes
-  res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Not found' }));
+    // 404 for unknown routes
+    res.writeHead(404, { ...corsHeaders, 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  } catch (err) {
+    console.error('HTTP handler error:', err);
+    if (!res.headersSent) {
+      res.writeHead(500, { ...corsHeaders, 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    }
+  }
 });
 
 // Create WebSocket server attached to HTTP server

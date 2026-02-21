@@ -24,3 +24,18 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: flyctl deploy --remote-only
 
+      - name: Wait for deploy to stabilize
+        run: sleep 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: matchmaking
+        run: npm ci
+
+      - name: Run smoke tests against production
+        working-directory: matchmaking
+        run: npm run smoke-test:prod
+

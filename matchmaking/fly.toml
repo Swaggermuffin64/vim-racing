@@ -12,6 +12,7 @@ primary_region = "sjc"  # San Jose - close to Seattle Hathora region
   PORT = "8080"
   PLAYERS_PER_MATCH = "2"
   HATHORA_REGION = "Seattle"
+  FRONTEND_URL = "https://vimgym.app,https://www.vimgym.app"
 
 [http_service]
   internal_port = 8080
