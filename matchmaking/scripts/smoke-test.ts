@@ -1,14 +1,17 @@
+import 'dotenv/config';
 import WebSocket from 'ws';
 
 // Usage:
 //   Local:      tsx scripts/smoke-test.ts
-//   Production: MATCHMAKING_URL=wss://your-matchmaker.example.com tsx scripts/smoke-test.ts
+//   Production: PROD=1 tsx scripts/smoke-test.ts
+//   Custom URL: MATCHMAKING_URL=wss://custom.example.com tsx scripts/smoke-test.ts
 
 const LOCAL_WS_URL = 'ws://localhost:3002';
+const PROD_WS_URL = 'wss://vim-racing-matchmaker.fly.dev';
 
-const WS_URL = process.env.MATCHMAKING_URL || LOCAL_WS_URL;
+const WS_URL = process.env.MATCHMAKING_URL || (process.env.PROD ? PROD_WS_URL : LOCAL_WS_URL);
 
-if (!process.env.MATCHMAKING_URL) {
+if (!process.env.MATCHMAKING_URL && !process.env.PROD) {
   console.log('ℹ️  No MATCHMAKING_URL set, defaulting to local:', LOCAL_WS_URL);
 }
 
@@ -16,6 +19,7 @@ if (!process.env.MATCHMAKING_URL) {
 const HTTP_URL = WS_URL.replace(/^ws(s?)/, 'http$1');
 
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '15000', 10);
+const LOAD_TEST_SECRET = process.env.LOAD_TEST_SECRET || '';
 const PROD_ORIGIN = 'https://vimgym.app';
 
 // --- Test runner ---
@@ -132,7 +136,10 @@ async function httpTests() {
 
 function connectWs(): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(WS_URL);
+    const url = LOAD_TEST_SECRET
+      ? `${WS_URL}?loadtest=${encodeURIComponent(LOAD_TEST_SECRET)}`
+      : WS_URL;
+    const ws = new WebSocket(url);
     ws.on('open', () => resolve(ws));
     ws.on('error', reject);
   });

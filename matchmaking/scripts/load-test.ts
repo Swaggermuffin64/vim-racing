@@ -1,17 +1,21 @@
+import 'dotenv/config';
 import WebSocket from 'ws';
 
 // Configuration from environment
 // Usage:
 //   Local:      NUM_PLAYERS=10 tsx scripts/load-test.ts
-//   Production: MATCHMAKING_URL=wss://your-matchmaker.example.com NUM_PLAYERS=10 tsx scripts/load-test.ts
+//   Production: PROD=1 NUM_PLAYERS=10 tsx scripts/load-test.ts
+//   Custom URL: MATCHMAKING_URL=wss://custom.example.com NUM_PLAYERS=10 tsx scripts/load-test.ts
 
 const LOCAL_URL = 'ws://localhost:3002';
+const PROD_URL = 'wss://vim-racing-matchmaker.fly.dev';
 
-const MATCHMAKING_URL = process.env.MATCHMAKING_URL || LOCAL_URL;
+const MATCHMAKING_URL = process.env.MATCHMAKING_URL || (process.env.PROD ? PROD_URL : LOCAL_URL);
 
-if (!process.env.MATCHMAKING_URL) {
+if (!process.env.MATCHMAKING_URL && !process.env.PROD) {
   console.log('ℹ️  No MATCHMAKING_URL set, defaulting to local:', LOCAL_URL);
 }
+const LOAD_TEST_SECRET = process.env.LOAD_TEST_SECRET || '';
 const NUM_PLAYERS = parseInt(process.env.NUM_PLAYERS || '10', 10);
 const STAGGER_MS = parseInt(process.env.STAGGER_MS || '500', 10);
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '60000', 10);
@@ -43,7 +47,10 @@ function simulatePlayer(playerNum: number): Promise<void> {
     const queuedAt = Date.now();
     let resolved = false;
 
-    const ws = new WebSocket(MATCHMAKING_URL);
+    const url = LOAD_TEST_SECRET
+      ? `${MATCHMAKING_URL}?loadtest=${encodeURIComponent(LOAD_TEST_SECRET)}`
+      : MATCHMAKING_URL;
+    const ws = new WebSocket(url);
     activeConnections.push(ws);
 
     const cleanup = () => {

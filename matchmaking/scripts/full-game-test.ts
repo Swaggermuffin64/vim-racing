@@ -1,25 +1,29 @@
+import 'dotenv/config';
 import WebSocket from 'ws';
 import { io, Socket } from 'socket.io-client';
 
 // Configuration from environment
 // Usage:
 //   Local:      NUM_GAMES=5 tsx scripts/full-game-test.ts
-//   Production: MATCHMAKING_URL=wss://your-matchmaker.example.com NUM_GAMES=5 tsx scripts/full-game-test.ts
-//   Viral test: MATCHMAKING_URL=wss://your-matchmaker.example.com VIRAL=1 tsx scripts/full-game-test.ts
+//   Production: PROD=1 NUM_GAMES=5 tsx scripts/full-game-test.ts
+//   Viral test: PROD=1 VIRAL=1 tsx scripts/full-game-test.ts
+//   Custom URL: MATCHMAKING_URL=wss://custom.example.com NUM_GAMES=5 tsx scripts/full-game-test.ts
 
 const LOCAL_MATCHMAKING_URL = 'ws://localhost:3002';
+const PROD_MATCHMAKING_URL = 'wss://vim-racing-matchmaker.fly.dev';
 
-const MATCHMAKING_URL = process.env.MATCHMAKING_URL || LOCAL_MATCHMAKING_URL;
+const MATCHMAKING_URL = process.env.MATCHMAKING_URL || (process.env.PROD ? PROD_MATCHMAKING_URL : LOCAL_MATCHMAKING_URL);
 
-if (!process.env.MATCHMAKING_URL) {
+if (!process.env.MATCHMAKING_URL && !process.env.PROD) {
   console.log('ℹ️  No MATCHMAKING_URL set, defaulting to local:', LOCAL_MATCHMAKING_URL);
 }
 
 const NUM_GAMES = parseInt(process.env.NUM_GAMES || '5', 10);
 const STAGGER_MS = parseInt(process.env.STAGGER_MS || '200', 10);
 const TIMEOUT_MS = parseInt(process.env.TIMEOUT_MS || '120000', 10);
-const TASK_DELAY_MS = parseInt(process.env.TASK_DELAY_MS || '100', 10); // Delay between solving tasks
+const TASK_DELAY_MS = parseInt(process.env.TASK_DELAY_MS || '100', 10);
 const VIRAL_MODE = !!process.env.VIRAL;
+const LOAD_TEST_SECRET = process.env.LOAD_TEST_SECRET || '';
 
 // Viral mode: simulates traffic ramping up like a streamer raid
 // Waves get progressively faster to test rate limiting and requeue
@@ -125,7 +129,10 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
     };
 
     // Step 1: Connect to matchmaking
-    const ws = new WebSocket(MATCHMAKING_URL);
+    const mmUrl = LOAD_TEST_SECRET
+      ? `${MATCHMAKING_URL}?loadtest=${encodeURIComponent(LOAD_TEST_SECRET)}`
+      : MATCHMAKING_URL;
+    const ws = new WebSocket(mmUrl);
     activeConnections.push(ws);
 
     ws.on('open', () => {
@@ -191,6 +198,7 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
       gameSocket = io(connectionUrl, {
         transports: ['websocket'],
         timeout: 30000,
+        auth: LOAD_TEST_SECRET ? { loadTestSecret: LOAD_TEST_SECRET } : undefined,
       });
       activeConnections.push(gameSocket);
 

@@ -87,6 +87,7 @@ const PORT = parseInt(process.env.PORT || '3002', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const PLAYERS_PER_MATCH = parseInt(process.env.PLAYERS_PER_MATCH || '2', 10);
 const GAME_SERVER_URL = process.env.GAME_SERVER_URL || 'http://localhost:3001';
+const LOAD_TEST_SECRET = process.env.LOAD_TEST_SECRET || '';
 
 const matchmaker = new Matchmaker({
   playersPerMatch: PLAYERS_PER_MATCH,
@@ -146,9 +147,12 @@ const wss = new WebSocketServer({ server, maxPayload: 4096 });
 wss.on('connection', (socket, req) => {
   const connectionId = randomUUID().slice(0, 8);
   const clientIp = getClientIp(req);
+
+  const url = new URL(req.url || '/', `http://${req.headers.host}`);
+  const isLoadTest = LOAD_TEST_SECRET && url.searchParams.get('loadtest') === LOAD_TEST_SECRET;
   
-  // Check connection limit
-  if (!connectionLimiter.addConnection(clientIp, connectionId)) {
+  // Check connection limit (bypass for load tests)
+  if (!isLoadTest && !connectionLimiter.addConnection(clientIp, connectionId)) {
     console.log(`🚫 Connection limit exceeded for IP ${clientIp}`);
     send(socket, { type: 'error', message: 'Too many connections from your IP. Please try again later.' });
     socket.close();
