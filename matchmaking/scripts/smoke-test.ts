@@ -75,40 +75,9 @@ async function httpTests() {
     fail('Health check', err.message);
   }
 
-  // Practice API
+  // CORS preflight
   try {
-    const res = await fetch(`${HTTP_URL}/api/task/practice`, {
-      headers: { 'Origin': PROD_ORIGIN },
-    });
-    assert(res.status === 200, 'Practice API returns 200', `got ${res.status}`);
-
-    const body = await res.json();
-    assert(Array.isArray(body.tasks), 'Practice API returns tasks array', `tasks is ${typeof body.tasks}`);
-    assert(body.tasks.length === 10, 'Practice API returns 10 tasks', `got ${body.tasks?.length}`);
-
-    if (body.tasks.length > 0) {
-      const task = body.tasks[0];
-      assert(
-        typeof task.id === 'string' && typeof task.type === 'string' && typeof task.codeSnippet === 'string',
-        'Tasks have required fields (id, type, codeSnippet)',
-        `first task: ${JSON.stringify(Object.keys(task))}`,
-      );
-    }
-
-    // CORS header on the practice response
-    const acao = res.headers.get('access-control-allow-origin');
-    assert(
-      acao === PROD_ORIGIN,
-      `CORS header reflects origin (${PROD_ORIGIN})`,
-      `Access-Control-Allow-Origin: ${acao ?? '(missing)'}`,
-    );
-  } catch (err: any) {
-    fail('Practice API', err.message);
-  }
-
-  // OPTIONS preflight
-  try {
-    const res = await fetch(`${HTTP_URL}/api/task/practice`, {
+    const res = await fetch(`${HTTP_URL}/`, {
       method: 'OPTIONS',
       headers: { 'Origin': PROD_ORIGIN },
     });

@@ -8,7 +8,6 @@ import { verifyToken } from './auth.js';
 import { RateLimiter, rateLimiter } from './rateLimit.js';
 import { connectionLimiter } from './connectionLimiter.js';
 import { validatePlayerName } from './validation.js';
-import { generatePracticeSession } from './practice/tasks.js';
 
 // --- CORS Configuration ---
 // Allowed origins for CORS - matches the backend's approach
@@ -118,14 +117,6 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     if (!httpRateLimiter.check(clientIp)) {
       res.writeHead(429, { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' });
       res.end(JSON.stringify({ error: 'Too many requests. Please try again later.' }));
-      return;
-    }
-
-    // Practice session endpoint
-    if (req.url === '/api/task/practice' && req.method === 'GET') {
-      const session = generatePracticeSession(10);
-      res.writeHead(200, { ...corsHeaders, 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(session));
       return;
     }
 
@@ -304,7 +295,6 @@ server.listen(PORT, HOST, () => {
   matchmaker.start();
   console.log(`🚀 Matchmaking server running on http://${HOST}:${PORT}`);
   console.log(`   WebSocket: ws://${HOST}:${PORT}`);
-  console.log(`   Practice API: http://${HOST}:${PORT}/api/task/practice`);
   console.log(`   Game server: ${GAME_SERVER_URL}`);
   console.log(`   Players per match: ${PLAYERS_PER_MATCH}`);
   console.log(`   Auth required: ${REQUIRE_AUTH}`);

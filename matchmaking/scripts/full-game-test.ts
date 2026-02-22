@@ -34,12 +34,13 @@ interface Wave {
 }
 
 const VIRAL_WAVES: Wave[] = [
-  { players: 10, staggerMs: 500, pauseAfterMs: 2000 },   // Slow start: 10 players
-  { players: 20, staggerMs: 200, pauseAfterMs: 2000 },   // Picking up: 20 players  
-  { players: 40, staggerMs: 100, pauseAfterMs: 2000 },   // Getting busy: 40 players
-  { players: 80, staggerMs: 50, pauseAfterMs: 2000 },    // Viral spike: 80 players
-  { players: 100, staggerMs: 20, pauseAfterMs: 3000 },   // Peak load: 100 players (will hit rate limits)
-  { players: 50, staggerMs: 100, pauseAfterMs: 0 },      // Tapering off: 50 players
+  { players: 20, staggerMs: 500, pauseAfterMs: 2000 },   // Warm up: 20 players
+  { players: 40, staggerMs: 200, pauseAfterMs: 2000 },   // Picking up: 40 players  
+  { players: 80, staggerMs: 100, pauseAfterMs: 2000 },   // Getting busy: 80 players
+  { players: 160, staggerMs: 50, pauseAfterMs: 2000 },   // Viral spike: 160 players
+  { players: 400, staggerMs: 20, pauseAfterMs: 3000 },   // Peak load: 400 players
+  { players: 200, staggerMs: 50, pauseAfterMs: 2000 },   // Sustained: 200 players
+  { players: 100, staggerMs: 100, pauseAfterMs: 0 },     // Tapering off: 100 players
 ];
 
 // Task types from backend
@@ -66,6 +67,7 @@ const stats = {
   errors: 0,
   matchTimes: [] as number[],
   gameTimes: [] as number[],
+  taskLatencies: [] as number[],
   startTime: Date.now(),
 };
 
@@ -91,6 +93,7 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
     let resolved = false;
     let currentTask: Task | null = null;
     let gameSocket: Socket | null = null;
+    let taskSentAt = 0;
 
     const result: GameResult = {
       playerName,
@@ -245,6 +248,11 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
       });
 
       gameSocket.on('game:player_finished_task', (data: { playerId: string; taskProgress: number; newTask: Task | undefined }) => {
+        if (taskSentAt) {
+          const latency = Date.now() - taskSentAt;
+          stats.taskLatencies.push(latency);
+          taskSentAt = 0;
+        }
         tasksCompleted++;
         stats.tasksCompleted++;
         currentTask = data.newTask || null;
@@ -312,6 +320,7 @@ function simulatePlayer(playerNum: number): Promise<GameResult> {
       if (!currentTask || !gameSocket || resolved) return;
 
       console.log(`[${playerName}] 🎯 Solving task: ${currentTask.type}`);
+      taskSentAt = Date.now();
 
       switch (currentTask.type) {
         case 'navigate':
@@ -394,6 +403,20 @@ function printStats() {
     console.log('-'.repeat(60));
     console.log('   GAME TIMES (winner):');
     console.log(`     Min: ${min}ms | Avg: ${avg.toFixed(0)}ms | Max: ${max}ms`);
+  }
+
+  if (stats.taskLatencies.length > 0) {
+    const sorted = [...stats.taskLatencies].sort((a, b) => a - b);
+    const avg = sorted.reduce((a, b) => a + b, 0) / sorted.length;
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const p50 = sorted[Math.floor(sorted.length * 0.5)];
+    const p95 = sorted[Math.floor(sorted.length * 0.95)];
+    const p99 = sorted[Math.floor(sorted.length * 0.99)];
+
+    console.log('-'.repeat(60));
+    console.log(`   TASK ROUND-TRIP LATENCY (${sorted.length} samples):`);
+    console.log(`     Min: ${min}ms | Avg: ${avg.toFixed(0)}ms | P50: ${p50}ms | P95: ${p95}ms | P99: ${p99}ms | Max: ${max}ms`);
   }
 
   // Show errors if any
