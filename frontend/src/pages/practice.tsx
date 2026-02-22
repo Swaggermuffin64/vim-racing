@@ -6,10 +6,7 @@ import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight
 import { setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
 import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 
-// Practice API uses the matchmaking server (which has the HTTP endpoint)
-// Convert ws:// to http:// or wss:// to https://
-const MATCHMAKING_URL = import.meta.env.VITE_MATCHMAKING_URL || 'ws://localhost:3002';
-const API_BASE = MATCHMAKING_URL.replace(/^ws/, 'http');
+const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
