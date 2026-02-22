@@ -219,6 +219,9 @@ io.use((socket, next) => {
   }
   
   socket.data.userId = authResult.userId!;
+  if (authResult.matchedRoomId) {
+    socket.data.matchedRoomId = authResult.matchedRoomId;
+  }
   console.log(`🔒 Auth success: userId=${authResult.userId}`);
   next();
 });
@@ -346,6 +349,12 @@ io.on('connection', (socket) => {
     
     const safeName = nameResult.value!;
     const safeRoomId = roomIdResult.value!;
+
+    // Enforce that the token's roomId matches the requested room
+    if (socket.data.matchedRoomId && socket.data.matchedRoomId !== safeRoomId) {
+      socket.emit('room:error', { message: 'Room ID does not match your match token' });
+      return;
+    }
     
     console.log(`📥 room:join_matched: roomId=${safeRoomId}, playerName=${safeName}`);
     

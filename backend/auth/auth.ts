@@ -19,10 +19,16 @@ export interface MatchTokenPayload {
 export interface AuthResult {
   success: boolean;
   userId?: string;
+  /** The roomId encoded in the match token (undefined for tokenless connections) */
+  matchedRoomId?: string;
   error?: string;
 }
 
 if (!MATCH_TOKEN_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ MATCH_TOKEN_SECRET is required in production');
+    process.exit(1);
+  }
   console.warn('⚠️ MATCH_TOKEN_SECRET not set — match token verification disabled (dev only)');
 }
 
@@ -44,7 +50,8 @@ export function verifyMatchToken(token: string | undefined): AuthResult {
     try {
       const decoded = jwt.decode(token);
       if (decoded && typeof decoded === 'object' && 'playerId' in decoded) {
-        return { success: true, userId: (decoded as MatchTokenPayload).playerId };
+        const payload = decoded as MatchTokenPayload;
+        return { success: true, userId: payload.playerId, matchedRoomId: payload.roomId };
       }
     } catch { /* fall through */ }
     return {
@@ -54,11 +61,11 @@ export function verifyMatchToken(token: string | undefined): AuthResult {
   }
 
   try {
-    const payload = jwt.verify(token, MATCH_TOKEN_SECRET) as MatchTokenPayload;
+    const payload = jwt.verify(token, MATCH_TOKEN_SECRET, { algorithms: ['HS256'] }) as MatchTokenPayload;
     if (!payload.playerId) {
       return { success: false, error: 'Token missing player ID' };
     }
-    return { success: true, userId: payload.playerId };
+    return { success: true, userId: payload.playerId, matchedRoomId: payload.roomId };
   } catch {
     return { success: false, error: 'Invalid or expired match token' };
   }

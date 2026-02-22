@@ -65,6 +65,8 @@ export interface SocketData {
   roomId?: string;
   /** Authenticated user ID from match token or local ID */
   userId?: string;
+  /** The roomId from the match token — used to enforce token/room binding */
+  matchedRoomId?: string;
   /** Client IP address for connection limiting */
   clientIp?: string;
 }
