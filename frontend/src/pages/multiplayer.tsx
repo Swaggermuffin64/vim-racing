@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Vim, getCM } from '@replit/codemirror-vim';
+import type { CodeMirrorV } from '@replit/codemirror-vim';
 
 import { useGameSocket } from '../hooks/useGameSocket';
 import { Lobby } from '../components/Lobby';
@@ -270,6 +272,12 @@ const MultiplayerGame: React.FC = () => {
       effects: allowReset.of(true),
     });
     currentTaskIdRef.current = gameState.task.id;
+
+    // Clear any active search highlighting from /, *, # between tasks.
+    const cm = getCM(view);
+    if (cm?.state?.vim) {
+      Vim.handleEx(cm as CodeMirrorV, 'nohlsearch');
+    }
 
     // Set up highlights based on task type
     if (gameState.task.type === 'navigate') {

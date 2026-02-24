@@ -5,7 +5,7 @@ import {
   EditorView, keymap, drawSelection,
   highlightActiveLine, lineNumbers, highlightActiveLineGutter
 } from "@codemirror/view";
-import { defaultKeymap } from "@codemirror/commands";
+import { defaultKeymap, history } from "@codemirror/commands";
 import { searchKeymap } from "@codemirror/search";
 import { vim, Vim, getCM } from '@replit/codemirror-vim';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -52,6 +52,11 @@ const disableMouseInteraction = EditorView.domEventHandlers({
   contextmenu: () => true,
   selectstart: () => true,
 });
+
+function shouldDebugUndo(): boolean {
+  return typeof globalThis !== 'undefined'
+    && (globalThis as { __vimRacingDebugUndo?: boolean }).__vimRacingDebugUndo === true;
+}
 
 
 function createLineNumbersExtension(relative: boolean) {
@@ -126,6 +131,11 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
     useEffect(() => {
       if (!containerRef.current) return;
 
+      // Use Vim-style regexes in search to avoid PCRE helper prompts/no-match hints.
+      if (typeof (Vim as { setOption?: (name: string, value: unknown) => void }).setOption === 'function') {
+        (Vim as { setOption?: (name: string, value: unknown) => void }).setOption?.('pcre', false);
+      }
+
       const docChangeListener = EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onDocChangeRef.current?.(update.state.doc.toString());
@@ -144,6 +154,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
           ...targetHighlightExtension,
           cursorTracker((offset) => onCursorChangeRef.current(offset)),
           lineNumbersCompartment.of(createLineNumbersExtension(true)),
+          history(),
           drawSelection(),
           highlightActiveLine(),
           highlightActiveLineGutter(),
@@ -180,6 +191,36 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
             '.cm-lineNumbers .cm-gutterElement.cm-activeLineGutter': {
               color: editorColors.primaryLight,
             },
+            '.cm-panels': {
+              backgroundColor: 'transparent',
+              color: editorColors.textPrimary,
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+              fontSize: '14px',
+              padding: '0',
+              margin: '0',
+            },
+            '.cm-panels div': {
+              padding: '0',
+              margin: '0',
+            },
+            '.cm-panels button': {
+              display: 'none',
+            },
+            '.cm-panels span + span': {
+              display: 'none',
+            },
+            '.cm-panels input': {
+              backgroundColor: 'transparent',
+              color: editorColors.textPrimary,
+              fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+              fontSize: '14px',
+              border: 'none',
+              borderRadius: '0',
+              outline: 'none',
+              padding: '0',
+              margin: '0',
+              lineHeight: '1.4',
+            },
           }),
         ],
       });
@@ -193,6 +234,16 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
       // through the Vim API so insert→normal transitions always work.
       // ---------------------------------------------------------------
       const handleEscapeKey = (e: KeyboardEvent) => {
+        if (shouldDebugUndo() && (e.key === 'u' || (e.key.toLowerCase() === 'r' && e.ctrlKey))) {
+          const cm = getCM(view);
+          console.log('[vim-undo-debug] keydown in editor', {
+            key: e.key,
+            ctrlKey: e.ctrlKey,
+            insertMode: Boolean(cm?.state?.vim?.insertMode),
+            vimAttached: Boolean(cm?.state?.vim),
+          });
+        }
+
         if (e.key === 'Escape' || (e.key === '[' && e.ctrlKey)) {
           e.preventDefault();
           const cm = getCM(view);
@@ -207,10 +258,30 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
       };
       view.contentDOM.addEventListener('keydown', handleEscapeKey);
 
+      const handleWindowKeyCapture = (e: KeyboardEvent) => {
+        if (!shouldDebugUndo()) return;
+        if (e.key !== 'u' && !(e.key.toLowerCase() === 'r' && e.ctrlKey)) return;
+        if (!view.dom.contains(e.target as Node)) return;
+
+        console.log('[vim-undo-debug] window capture keydown', {
+          key: e.key,
+          ctrlKey: e.ctrlKey,
+          targetTag: (e.target as HTMLElement | null)?.tagName,
+          activeInsideEditor: view.dom.contains(document.activeElement),
+        });
+      };
+      window.addEventListener('keydown', handleWindowKeyCapture, { capture: true });
+
       // Refocus the editor whenever it loses focus unintentionally.
       // Parents opt into allowing blur via the shouldAllowBlur callback.
       // This also handles Escape-from-Vimium which blurs without a keydown.
-      const handleBlur = () => {
+      const handleBlur = (e: FocusEvent) => {
+        // Allow focus to move to vim dialogs (e.g. '/' search prompt)
+        // that live inside the editor DOM but outside contentDOM.
+        if (e.relatedTarget instanceof Node && view.dom.contains(e.relatedTarget)) {
+          return;
+        }
+
         const allowBlur = shouldAllowBlurRef.current;
         if (!allowBlur || !allowBlur()) {
           // Force vim back to normal mode — Vimium (or similar browser
@@ -235,6 +306,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
       return () => {
         view.contentDOM.removeEventListener('keydown', handleEscapeKey);
         view.contentDOM.removeEventListener('blur', handleBlur);
+        window.removeEventListener('keydown', handleWindowKeyCapture, { capture: true });
         view.destroy();
         viewRef.current = null;
       };

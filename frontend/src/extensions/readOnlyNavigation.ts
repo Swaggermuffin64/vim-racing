@@ -1,4 +1,18 @@
-import { EditorState, TransactionSpec, StateEffect, StateField, Extension } from '@codemirror/state';
+import { EditorState, Transaction, TransactionSpec, StateEffect, StateField, Extension } from '@codemirror/state';
+
+function shouldDebugUndo(): boolean {
+  return typeof globalThis !== 'undefined'
+    && (globalThis as { __vimRacingDebugUndo?: boolean }).__vimRacingDebugUndo === true;
+}
+
+function logUndoDebug(message: string, data?: unknown): void {
+  if (!shouldDebugUndo()) return;
+  if (data !== undefined) {
+    console.log(`[vim-undo-debug] ${message}`, data);
+    return;
+  }
+  console.log(`[vim-undo-debug] ${message}`);
+}
 
 /**
  * State effect to toggle delete mode on/off
@@ -46,8 +60,10 @@ const allowedDeleteRangeState = StateField.define<{ from: number; to: number } |
     
     // Map the range through document changes to keep it in sync
     if (value && tr.docChanged) {
-      const newFrom = tr.changes.mapPos(value.from, 1); // 1 = stay at end if deleted
-      const newTo = tr.changes.mapPos(value.to, -1);    // -1 = stay at start if deleted
+      // Keep boundary inserts inside the tracked range so undo at either edge
+      // restores the full highlighted span.
+      const newFrom = tr.changes.mapPos(value.from, -1);
+      const newTo = tr.changes.mapPos(value.to, 1);
       
       // If the range collapsed or became invalid, return null
       if (newFrom >= newTo) {
@@ -65,14 +81,28 @@ const allowedDeleteRangeState = StateField.define<{ from: number; to: number } |
  * When delete mode is enabled, deletions are only allowed within the target range.
  */
 const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
+  const isUndoRedo = tr.isUserEvent('undo') || tr.isUserEvent('redo');
+  if (isUndoRedo) {
+    logUndoDebug('saw undo/redo transaction', {
+      userEvent: tr.annotation(Transaction.userEvent),
+      docChanged: tr.docChanged,
+    });
+  }
+
   // If no document changes, allow everything (navigation, selection, etc.)
   if (!tr.docChanged) {
+    if (isUndoRedo) {
+      logUndoDebug('allowing undo/redo with no doc changes');
+    }
     return tr;
   }
 
   // Check if this transaction has an allowReset effect - if so, let it through
   for (const effect of tr.effects) {
     if (effect.is(allowReset) && effect.value) {
+      if (isUndoRedo) {
+        logUndoDebug('allowing undo/redo due to allowReset effect');
+      }
       return tr;
     }
   }
@@ -82,6 +112,22 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
 
   if (deleteMode) {
     const allowedRange = tr.startState.field(allowedDeleteRangeState);
+
+    if (isUndoRedo && allowedRange) {
+      let isInAllowedRange = true;
+      tr.changes.iterChanges((fromA, toA) => {
+        if (fromA < allowedRange.from || toA > allowedRange.to) {
+          isInAllowedRange = false;
+        }
+      });
+
+      if (isInAllowedRange) {
+        logUndoDebug('allowing undo/redo inside allowed range', { allowedRange });
+        return tr;
+      }
+      logUndoDebug('blocking undo/redo outside allowed range', { allowedRange });
+    }
+
     let isValidDeletion = true;
     
     tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
@@ -99,8 +145,19 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
     });
 
     if (isValidDeletion) {
+      if (isUndoRedo) {
+        logUndoDebug('allowing undo/redo as valid deletion');
+      }
       return tr;
     }
+  }
+
+  if (isUndoRedo) {
+    logUndoDebug('blocking undo/redo transaction', {
+      deleteMode,
+      hasSelection: Boolean(tr.selection),
+      scrollIntoView: tr.scrollIntoView,
+    });
   }
 
   // Block the document change but preserve selection/scroll

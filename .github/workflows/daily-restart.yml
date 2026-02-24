@@ -1,0 +1,25 @@
+name: Daily Restart
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # 8:00 AM UTC daily
+
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+jobs:
+  restart:
+    name: Restart Fly.io Machines
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Restart Backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl apps restart vim-racing-server
+
+      - name: Restart Matchmaking
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl apps restart vim-racing-matchmaker

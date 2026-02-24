@@ -265,8 +265,10 @@ export const targetHighlightField = StateField.define<DecorationSet>({
       decorations.between(0, tr.state.doc.length, (f, t, deco) => {
         if (deco.spec.class === 'cm-delete-highlight') {
           hasRange = true;
-          from = tr.changes.mapPos(f, 1);
-          to = tr.changes.mapPos(t, -1);
+          // Include edits that occur exactly on either boundary so undo at
+          // range edges restores the original visual highlight.
+          from = tr.changes.mapPos(f, -1);
+          to = tr.changes.mapPos(t, 1);
         }
       });
       

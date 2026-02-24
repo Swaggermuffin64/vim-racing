@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Vim, getCM } from '@replit/codemirror-vim';
+import type { CodeMirrorV } from '@replit/codemirror-vim';
 
 import { Task } from '../types/task';
 import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
@@ -446,6 +448,13 @@ const PracticeEditor: React.FC = () => {
       },
       effects: allowReset.of(true),
     });
+
+    // Reset search highlights between tasks so `/`, `*`, and `#`
+    // don't carry visual state into the next snippet.
+    const cm = getCM(view);
+    if (cm?.state?.vim) {
+      Vim.handleEx(cm as CodeMirrorV, 'nohlsearch');
+    }
 
     if (task.type === 'navigate') {
       view.dispatch({
