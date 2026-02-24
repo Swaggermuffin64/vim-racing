@@ -556,19 +556,30 @@ const PracticeEditor: React.FC = () => {
     }
   }, []);
 
-  // Listen for Enter key to advance when task is complete
+  // Listen for Enter key:
+  // - when session is complete: restart
+  // - when task is complete: advance to next task
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTaskComplete && e.key === 'Enter') {
+      if (e.key !== 'Enter') return;
+
+      if (isSessionComplete) {
         e.preventDefault();
         e.stopPropagation();
-        advanceToNextTask();
+        void fetchPracticeSession();
+        return;
       }
+
+      if (!isTaskComplete) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      advanceToNextTask();
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isTaskComplete, advanceToNextTask]);
+  }, [isSessionComplete, isTaskComplete, advanceToNextTask, fetchPracticeSession]);
 
   // Toggle relative line numbers
   const toggleRelativeLineNumbers = useCallback(() => {
