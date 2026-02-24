@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 interface RaceCountdownProps {
   seconds: number;
@@ -48,7 +48,81 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
+let sharedAudioContext: AudioContext | null = null;
+let audioUnlockListenersInstalled = false;
+
+function getOrCreateAudioContext(): AudioContext | null {
+  if (sharedAudioContext) return sharedAudioContext;
+  const Ctx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return null;
+  sharedAudioContext = new Ctx();
+  return sharedAudioContext;
+}
+
+function installGlobalAudioUnlockListeners(): void {
+  if (audioUnlockListenersInstalled || typeof window === 'undefined') return;
+  audioUnlockListenersInstalled = true;
+
+  const unlockAudio = () => {
+    const ctx = getOrCreateAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      void ctx.resume();
+    }
+  };
+
+  window.addEventListener('pointerdown', unlockAudio, true);
+  window.addEventListener('keydown', unlockAudio, true);
+}
+
+function playCountdownTick(ctx: AudioContext, second: number): void {
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  oscillator.type = 'sine';
+  oscillator.frequency.value = second === 0 ? 880 : 660;
+
+  const duration = second === 0 ? 0.22 : 0.14;
+  const now = ctx.currentTime;
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(now);
+  oscillator.stop(now + duration);
+}
+
+installGlobalAudioUnlockListeners();
+
 export const RaceCountdown: React.FC<RaceCountdownProps> = ({ seconds }) => {
+  const lastPlayedSecondRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (lastPlayedSecondRef.current === seconds) return;
+    lastPlayedSecondRef.current = seconds;
+
+    // Browser autoplay policies can block audio until user interaction;
+    // silently skip in that case so countdown UI still works normally.
+    void (async () => {
+      try {
+        const ctx = getOrCreateAudioContext();
+        if (!ctx) return;
+
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
+        }
+
+        if (ctx.state !== 'running') return;
+        playCountdownTick(ctx, seconds);
+      } catch {
+        // No-op: sound is optional polish, not core gameplay behavior.
+      }
+    })();
+  }, [seconds]);
+
   return (
     <div style={styles.overlay}>
       <style>
