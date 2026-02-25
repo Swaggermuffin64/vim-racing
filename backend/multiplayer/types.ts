@@ -8,6 +8,8 @@ export interface Player {
   name: string;
   taskProgress: number;
   isFinished: boolean;
+  /** True when player leaves after the race lifecycle has started */
+  leftRace?: boolean;
   successIndicator: { cursorOffset?: number; editorText?: string };
   readyToPlay: boolean;
   finishTime?: number;

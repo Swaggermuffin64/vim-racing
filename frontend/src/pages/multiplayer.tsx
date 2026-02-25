@@ -537,10 +537,17 @@ const MultiplayerGame: React.FC = () => {
               >
                 <span>
                   {player.name}
+                  {player.leftRace && (
+                    <span style={{ color: colors.textMuted }}>
+                      {' '} (left)
+                    </span>
+                  )}
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: colors.textMuted }}>
-                    {player.taskProgress ?? 0}/{gameState.num_tasks ? gameState.num_tasks : 1}
+                    {player.leftRace && !player.isFinished
+                      ? 'DNF'
+                      : `${player.taskProgress ?? 0}/${gameState.num_tasks ? gameState.num_tasks : 1}`}
                   </span>
                   {player.isFinished && (
                     <span style={styles.finishedBadge}>

@@ -201,7 +201,22 @@ export class RoomManager {
     const room = this.rooms.get(roomId);
     if (!room) return;
 
-    room.players.delete(playerId);
+    const player = room.players.get(playerId);
+    if (!player) return;
+
+    const keepPlayerForScoreboard = room.state === 'countdown' || room.state === 'racing' || room.state === 'finished';
+
+    if (keepPlayerForScoreboard) {
+      player.leftRace = true;
+      // Mark as complete in backend state so the race can still conclude.
+      // UI still shows DNF for players who left before finishing.
+      if (!player.isFinished) {
+        player.isFinished = true;
+      }
+    } else {
+      room.players.delete(playerId);
+    }
+
     this.playerRooms.delete(playerId);
     socket.leave(roomId);
 
@@ -213,11 +228,17 @@ export class RoomManager {
     // Clean up empty rooms
     if (room.players.size === 0) {
       this.destroyRoom(roomId);
-    } 
-    else if (room.state === 'racing' || room.state === 'countdown') {
-      // If race was in progress, end it
-      room.state = 'finished';
-      this.endRace(roomId);
+      return;
+    }
+
+    // Keep in-progress races running for remaining players.
+    // This lets someone finish even if their opponent disconnects mid-game.
+    if (room.state === 'racing' || room.state === 'countdown') {
+      // If all remaining players are already done, finish immediately.
+      if (room.state === 'racing' && this.allPlayersFinished(room)) {
+        this.endRace(roomId);
+      }
+      return;
     }
   }
 
@@ -487,6 +508,18 @@ export class RoomManager {
       return;
     }
 
+    // Remove players who left during/after the race before enabling rematch.
+    room.players.forEach((player, id) => {
+      if (player.leftRace) {
+        room.players.delete(id);
+      }
+    });
+
+    if (room.players.size === 0) {
+      this.destroyRoom(roomId);
+      return;
+    }
+
     // For PRIVATE rooms: allow rematch, reset player states
     room.players.forEach(player => {
       player.successIndicator.cursorOffset = 0;
@@ -494,6 +527,7 @@ export class RoomManager {
       player.taskProgress = 0;
       player.isFinished = false;
       player.readyToPlay = false;
+      delete player.leftRace;
       delete player.taskStartedAt;
     });
 

@@ -100,7 +100,21 @@ export function useGameSocket(): UseGameSocketReturn {
     socket.on('room:player_left', ({ playerId }) => {
       setGameState(prev => ({
         ...prev,
-        players: prev.players.filter(p => p.id !== playerId),
+        players: (() => {
+          const player = prev.players.find(p => p.id === playerId);
+          if (!player) {
+            return prev.players;
+          }
+
+          const keepOnScoreboard = prev.roomState === 'countdown' || prev.roomState === 'racing' || prev.roomState === 'finished';
+          if (!keepOnScoreboard) {
+            return prev.players.filter(p => p.id !== playerId);
+          }
+
+          return prev.players.map(p =>
+            p.id === playerId ? { ...p, leftRace: true } : p
+          );
+        })(),
       }));
     });
 
@@ -186,7 +200,7 @@ export function useGameSocket(): UseGameSocketReturn {
         ...prev,
         roomState: 'finished',
         rankings,
-        players: prev.players.map(p => ({ ...p, cursorOffset: 0, taskProgress: 0, isFinished: false, readyToPlay: false })),
+        players: prev.players.map(p => ({ ...p, cursorOffset: 0, taskProgress: 0, isFinished: false, leftRace: false, readyToPlay: false })),
       }));
     });
 

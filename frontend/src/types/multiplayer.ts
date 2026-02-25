@@ -17,6 +17,7 @@ export interface Player {
   cursorOffset: number;
   taskProgress: number;
   isFinished: boolean;
+  leftRace?: boolean;
   readyToPlay: boolean;
   finishTime?: number;
 }
