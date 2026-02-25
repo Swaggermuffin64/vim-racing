@@ -1,5 +1,5 @@
 app = "vim-racing-matchmaker"
-primary_region = "sjc"
+primary_region = "iad"
 
 # IMPORTANT: This service uses an in-memory matchmaking queue, so it MUST run
 # on a single machine. Multiple machines = separate queues = players can't match.
