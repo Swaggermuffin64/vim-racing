@@ -225,6 +225,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: '14px',
   },
+  quickPlayStatusPanel: {
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 0,
+    padding: '8px 0 12px',
+    marginBottom: '12px',
+  },
+  quickPlayStatusText: {
+    fontSize: '14px',
+    color: colors.textSecondary,
+    fontFamily: '"JetBrains Mono", monospace',
+  },
 };
 
 export const Lobby: React.FC<LobbyProps> = ({
@@ -365,8 +377,7 @@ export const Lobby: React.FC<LobbyProps> = ({
 
         {/* Show queue status when in queue */}
         {isInQueue ? (
-          <div style={styles.card}>
-            <div style={styles.cardTitle}>Finding Match</div>
+          <div style={styles.quickPlayStatusPanel}>
             <div style={{
               textAlign: 'center' as const,
               padding: '20px 0',
@@ -412,8 +423,7 @@ export const Lobby: React.FC<LobbyProps> = ({
           /* Connecting phase — between clicking Find Match and entering
              the queue, or between match:found and joining the game room.
              Show a clear status with a cancel option. */
-          <div style={styles.card}>
-            <div style={styles.cardTitle}>Connecting</div>
+          <div style={styles.quickPlayStatusPanel}>
             <div style={{
               textAlign: 'center' as const,
               padding: '20px 0',
@@ -427,12 +437,8 @@ export const Lobby: React.FC<LobbyProps> = ({
                 animation: 'spin 1s linear infinite',
                 margin: '0 auto 16px',
               }} />
-              <div style={{
-                fontSize: '14px',
-                color: colors.textSecondary,
-                fontFamily: '"JetBrains Mono", monospace',
-              }}>
-                Connecting to matchmaking...
+              <div style={styles.quickPlayStatusText}>
+                Searching for players...
               </div>
               {longWaitMessage}
             </div>
