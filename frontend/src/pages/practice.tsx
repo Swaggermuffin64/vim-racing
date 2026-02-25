@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Vim, getCM } from '@replit/codemirror-vim';
 import type { CodeMirrorV } from '@replit/codemirror-vim';
+import { Transaction } from '@codemirror/state';
 
 import { Task } from '../types/task';
 import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
-import { setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
+import { setDeleteMode, setAllowedDeleteRange, allowReset, setUndoBarrier } from '../extensions/readOnlyNavigation';
 import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
@@ -44,6 +45,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '"JetBrains Mono", monospace',
     textShadow: `0 0 20px ${colors.warning}40`,
     letterSpacing: '2px',
+  },
+  exitButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    background: 'transparent',
+    border: `1px solid ${colors.secondary}`,
+    borderRadius: '8px',
+    color: colors.secondary,
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontWeight: 600,
+    transition: 'all 0.2s ease',
   },
   taskBanner: {
     background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
@@ -112,7 +125,15 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${colors.border}`,
     borderRadius: '12px',
     padding: '20px',
+  },
+  sidebarColumn: {
     minWidth: '280px',
+  },
+  sidebarControls: {
+    marginTop: '12px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-start',
   },
   sidebarTitle: {
     fontSize: '14px',
@@ -149,38 +170,45 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
   },
   toggleButton: {
-    width: '100%',
+    width: '90%',
     padding: '10px 16px',
     fontSize: '13px',
     fontWeight: 500,
-    color: colors.textSecondary,
-    background: 'transparent',
-    border: `1px solid ${colors.border}`,
+    color: colors.textPrimary,
+    background: `${colors.primary}20`,
+    border: `1px solid ${colors.primary}60`,
     borderRadius: '8px',
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
     transition: 'all 0.2s ease',
-    marginTop: '16px',
-  },
-  toggleButtonActive: {
-    background: `${colors.primary}20`,
-    borderColor: colors.primary,
-    color: colors.primaryLight,
+    marginTop: '12px',
   },
   restartButton: {
-    width: '100%',
-    padding: '12px 20px',
-    fontSize: '14px',
-    fontWeight: 600,
-    color: colors.bgDark,
-    background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.primaryLight} 100%)`,
-    border: 'none',
+    width: '90%',
+    padding: '10px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: colors.textPrimary,
+    background: `${colors.primary}20`,
+    border: `1px solid ${colors.primary}60`,
     borderRadius: '8px',
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
-    marginTop: '16px',
-    boxShadow: `0 0 20px ${colors.primaryGlow}`,
+    marginTop: '12px',
     transition: 'all 0.2s ease',
+  },
+  resetTaskButton: {
+    padding: '8px 14px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: colors.secondary,
+    background: 'transparent',
+    border: `1px solid ${colors.secondary}`,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    transition: 'all 0.2s ease',
+    marginLeft: 'auto',
   },
   sessionComplete: {
     display: 'flex',
@@ -446,7 +474,8 @@ const PracticeEditor: React.FC = () => {
         to: view.state.doc.length,
         insert: task.codeSnippet,
       },
-      effects: allowReset.of(true),
+      effects: [allowReset.of(true), setUndoBarrier.of(true)],
+      annotations: Transaction.addToHistory.of(false),
     });
 
     // Reset search highlights between tasks so `/`, `*`, and `#`
@@ -577,6 +606,31 @@ const PracticeEditor: React.FC = () => {
     editorRef.current?.setRelativeLineNumbers(newValue);
   }, [relativeLineNumbers]);
 
+  const resetCurrentTask = useCallback(() => {
+    const current = tasksRef.current[taskProgressRef.current];
+    if (!current) return;
+
+    isTaskCompleteRef.current = false;
+    setIsTaskComplete(false);
+    editorRef.current?.resetUndoHistory();
+    setupTaskInEditor(current);
+    editorRef.current?.view?.focus();
+  }, [setupTaskInEditor]);
+
+  useEffect(() => {
+    const handleResetHotkey = (e: KeyboardEvent) => {
+      if (e.key !== 'F6') return;
+      if (!isReady || isSessionComplete || !currentTask) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      resetCurrentTask();
+    };
+
+    window.addEventListener('keydown', handleResetHotkey, { capture: true });
+    return () => window.removeEventListener('keydown', handleResetHotkey, { capture: true });
+  }, [isReady, isSessionComplete, currentTask, resetCurrentTask]);
+
   // Handle cursor position changes (for navigate tasks)
   const handleCursorChange = useCallback((offset: number) => {
     const currentTasks = tasksRef.current;
@@ -665,6 +719,9 @@ const PracticeEditor: React.FC = () => {
         <div style={styles.header}>
           <div style={styles.title}>Vim Racing - Practice</div>
           <div style={styles.timer}>{formatTime(isSessionComplete ? finalTime : elapsedTime)}</div>
+          <button style={styles.exitButton} onClick={() => navigate('/')}>
+            Exit
+          </button>
         </div>
 
         {isSessionComplete ? (
@@ -720,6 +777,14 @@ const PracticeEditor: React.FC = () => {
               <div style={styles.editorPanel}>
                 <div style={styles.editorLabel}>
                   Editor
+                  {currentTask && (
+                    <button
+                      style={styles.resetTaskButton}
+                      onClick={resetCurrentTask}
+                    >
+                      Reset (F6)
+                    </button>
+                  )}
                 </div>
                 <div style={styles.editorWrapper}>
                   <VimRaceEditor
@@ -734,40 +799,41 @@ const PracticeEditor: React.FC = () => {
               </div>
 
               {/* Sidebar */}
-              <div style={styles.sidebar}>
-                <div style={styles.sidebarTitle}>Progress</div>
+              <div style={styles.sidebarColumn}>
+                <div style={styles.sidebar}>
+                  <div style={styles.sidebarTitle}>Progress</div>
 
-                <div style={styles.progressRow}>
-                  <span>Tasks Completed</span>
-                  <span style={{ color: colors.primaryLight }}>
-                    {taskProgress + (isTaskComplete ? 1 : 0)}/{numTasks}
-                  </span>
+                  <div style={styles.progressRow}>
+                    <span>Tasks Completed</span>
+                    <span style={{ color: colors.primaryLight }}>
+                      {taskProgress + (isTaskComplete ? 1 : 0)}/{numTasks}
+                    </span>
+                  </div>
+
+                  <div style={styles.progressRow}>
+                    <span>Time</span>
+                    <span style={{ color: colors.warning }}>
+                      {formatTime(elapsedTime)}
+                    </span>
+                  </div>
+
+                  <div style={styles.progressBar}>
+                    <div style={{ ...styles.progressFill, width: `${progressPercent}%` }} />
+                  </div>
                 </div>
 
-                <div style={styles.progressRow}>
-                  <span>Time</span>
-                  <span style={{ color: colors.warning }}>
-                    {formatTime(elapsedTime)}
-                  </span>
+                <div style={styles.sidebarControls}>
+                  <button
+                    style={styles.toggleButton}
+                    onClick={toggleRelativeLineNumbers}
+                  >
+                    {relativeLineNumbers ? '[x] ' : '[ ] '}Relative Line Numbers
+                  </button>
+
+                  <button style={styles.restartButton} onClick={fetchPracticeSession}>
+                    Restart Session
+                  </button>
                 </div>
-
-                <div style={styles.progressBar}>
-                  <div style={{ ...styles.progressFill, width: `${progressPercent}%` }} />
-                </div>
-
-                <button
-                  style={{
-                    ...styles.toggleButton,
-                    ...(relativeLineNumbers ? styles.toggleButtonActive : {}),
-                  }}
-                  onClick={toggleRelativeLineNumbers}
-                >
-                  {relativeLineNumbers ? '[x] ' : '[ ] '}Relative Line Numbers
-                </button>
-
-                <button style={styles.restartButton} onClick={fetchPracticeSession}>
-                  Restart Session
-                </button>
               </div>
             </div>
           </>

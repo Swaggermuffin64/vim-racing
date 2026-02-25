@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Vim, getCM } from '@replit/codemirror-vim';
 import type { CodeMirrorV } from '@replit/codemirror-vim';
+import { Transaction } from '@codemirror/state';
 
 import { useGameSocket } from '../hooks/useGameSocket';
 import { Lobby } from '../components/Lobby';
@@ -9,7 +10,7 @@ import { WaitingRoom } from '../components/WaitingRoom';
 import { RaceCountdown } from '../components/RaceCountdown';
 import { RaceResults } from '../components/RaceResults';
 import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
-import { setDeleteMode, setAllowedDeleteRange, allowReset } from '../extensions/readOnlyNavigation';
+import { setDeleteMode, setAllowedDeleteRange, allowReset, setUndoBarrier } from '../extensions/readOnlyNavigation';
 import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 
 const styles: Record<string, React.CSSProperties> = {
@@ -154,6 +155,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     transition: 'all 0.2s ease',
   },
+  resetTaskButton: {
+    padding: '8px 14px',
+    fontSize: '12px',
+    background: 'transparent',
+    border: `1px solid ${colors.secondary}`,
+    borderRadius: '8px',
+    color: colors.secondary,
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontWeight: 600,
+    marginLeft: 'auto',
+  },
   scoreboard: {
     background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
     border: `1px solid ${colors.border}`,
@@ -227,6 +240,62 @@ const MultiplayerGame: React.FC = () => {
     sendEditorTextRef.current(text);
   }, []);
 
+  const resetCurrentTask = useCallback(() => {
+    const view = editorRef.current?.view;
+    if (!view || !gameState.task.id) return;
+
+    editorRef.current?.resetUndoHistory();
+
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: gameState.task.codeSnippet,
+      },
+      effects: [allowReset.of(true), setUndoBarrier.of(true)],
+      annotations: Transaction.addToHistory.of(false),
+    });
+
+    if (gameState.task.type === 'navigate') {
+      view.dispatch({
+        effects: [
+          setTargetPosition.of(gameState.task.targetOffset),
+          setDeleteMode.of(false),
+          setAllowedDeleteRange.of(null),
+        ],
+      });
+    } else if (gameState.task.type === 'delete') {
+      view.dispatch({
+        effects: [
+          setTargetRange.of(gameState.task.targetRange),
+          setDeleteMode.of(true),
+          setAllowedDeleteRange.of(gameState.task.targetRange),
+        ],
+      });
+    }
+
+    const cm = getCM(view);
+    if (cm?.state?.vim) {
+      Vim.handleEx(cm as CodeMirrorV, 'nohlsearch');
+    }
+
+    view.focus();
+  }, [gameState.task]);
+
+  useEffect(() => {
+    const handleResetHotkey = (e: KeyboardEvent) => {
+      if (e.key !== 'F6') return;
+      if (gameState.roomState !== 'racing' || me?.isFinished || !gameState.task.id) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      resetCurrentTask();
+    };
+
+    window.addEventListener('keydown', handleResetHotkey, { capture: true });
+    return () => window.removeEventListener('keydown', handleResetHotkey, { capture: true });
+  }, [gameState.roomState, gameState.task.id, me?.isFinished, resetCurrentTask]);
+
   const handleEditorReady = useCallback(() => {
     currentTaskIdRef.current = null;
     setEditorReadyTick((prev) => prev + 1);
@@ -269,7 +338,8 @@ const MultiplayerGame: React.FC = () => {
         to: view.state.doc.length,
         insert: gameState.task.codeSnippet,
       },
-      effects: allowReset.of(true),
+      effects: [allowReset.of(true), setUndoBarrier.of(true)],
+      annotations: Transaction.addToHistory.of(false),
     });
     currentTaskIdRef.current = gameState.task.id;
 
@@ -312,7 +382,8 @@ const MultiplayerGame: React.FC = () => {
         to: view.state.doc.length,
         insert: gameState.task.codeSnippet,
       },
-      effects: allowReset.of(true),
+      effects: [allowReset.of(true), setUndoBarrier.of(true)],
+      annotations: Transaction.addToHistory.of(false),
     });
 
     if (gameState.task.type === 'navigate') {
@@ -425,6 +496,11 @@ const MultiplayerGame: React.FC = () => {
                 <span style={styles.finishedBadge}>
                   {formatTime(me.finishTime || 0)}
                 </span>
+              )}
+              {!me?.isFinished && gameState.task.id && (
+                <button style={styles.resetTaskButton} onClick={resetCurrentTask}>
+                  Reset (F6)
+                </button>
               )}
             </div>
             {me?.isFinished ? (

@@ -28,6 +28,7 @@ export const setAllowedDeleteRange = StateEffect.define<{ from: number; to: numb
  * State effect to allow a reset (bypasses the read-only filter)
  */
 export const allowReset = StateEffect.define<boolean>();
+export const setUndoBarrier = StateEffect.define<boolean>();
 
 /**
  * State field that tracks whether deletions are allowed
@@ -40,6 +41,30 @@ const deleteModeState = StateField.define<boolean>({
         return effect.value;
       }
     }
+    return value;
+  },
+});
+
+/**
+ * State field that blocks undo/redo immediately after a reset swap.
+ * It is cleared on the first normal document edit after reset.
+ */
+const undoBarrierState = StateField.define<boolean>({
+  create: () => false,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setUndoBarrier)) {
+        return effect.value;
+      }
+    }
+
+    if (tr.docChanged) {
+      const isResetSwap = tr.effects.some((effect) => effect.is(allowReset) && effect.value);
+      if (!isResetSwap) {
+        return false;
+      }
+    }
+
     return value;
   },
 });
@@ -109,6 +134,15 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
 
   // Check if delete mode is enabled
   const deleteMode = tr.startState.field(deleteModeState);
+  const undoBarrier = tr.startState.field(undoBarrierState);
+
+  if (isUndoRedo && undoBarrier) {
+    logUndoDebug('blocking undo/redo due to reset barrier');
+    const blockedUndo: TransactionSpec = {};
+    if (tr.selection) blockedUndo.selection = tr.selection;
+    if (tr.scrollIntoView) blockedUndo.scrollIntoView = true;
+    return blockedUndo;
+  }
 
   if (deleteMode) {
     const allowedRange = tr.startState.field(allowedDeleteRangeState);
@@ -181,6 +215,7 @@ const readOnlyFilter = EditorState.transactionFilter.of((tr) => {
  */
 export const readOnlyNavigation: Extension = [
   deleteModeState,
+  undoBarrierState,
   allowedDeleteRangeState,
   readOnlyFilter,
 ];

@@ -43,6 +43,7 @@ export const editorColors = {
 // ---------------------------------------------------------------------------
 
 const lineNumbersCompartment = new Compartment();
+const historyCompartment = new Compartment();
 
 /** Block all mouse interaction — the editor is keyboard-only. */
 const disableMouseInteraction = EditorView.domEventHandlers({
@@ -80,6 +81,8 @@ export interface VimRaceEditorHandle {
   view: EditorView | null;
   /** Toggle between relative and absolute line numbers. */
   setRelativeLineNumbers: (relative: boolean) => void;
+  /** Clear undo/redo history stack. */
+  resetUndoHistory: () => void;
 }
 
 interface VimRaceEditorProps {
@@ -125,6 +128,16 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
           ),
         });
       },
+      resetUndoHistory() {
+        // Reconfiguring to the same extension preserves field state, so
+        // remove history first, then re-add to guarantee a fresh undo stack.
+        viewRef.current?.dispatch({
+          effects: historyCompartment.reconfigure([]),
+        });
+        viewRef.current?.dispatch({
+          effects: historyCompartment.reconfigure(history()),
+        });
+      },
     }));
 
     // Create editor on mount, destroy on unmount.
@@ -154,7 +167,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
           ...targetHighlightExtension,
           cursorTracker((offset) => onCursorChangeRef.current(offset)),
           lineNumbersCompartment.of(createLineNumbersExtension(true)),
-          history(),
+          historyCompartment.of(history()),
           drawSelection(),
           highlightActiveLine(),
           highlightActiveLineGutter(),
