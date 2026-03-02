@@ -1,8 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Vim, getCM } from '@replit/codemirror-vim';
 import type { CodeMirrorV } from '@replit/codemirror-vim';
-import { Transaction } from '@codemirror/state';
+import { EditorState, Transaction } from '@codemirror/state';
+import { cpp } from '@codemirror/lang-cpp';
+import { oneDark } from '@codemirror/theme-one-dark';
+import { EditorView, drawSelection, Decoration } from '@codemirror/view';
+import { StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
 
 import { Task } from '../types/task';
 import type { KeystrokeEvent, TaskKeystrokeSubmission } from '../types/keystroke';
@@ -239,6 +243,20 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '12px',
     transition: 'all 0.2s ease',
   },
+  restartSameButton: {
+    width: '90%',
+    padding: '10px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    color: colors.secondaryLight,
+    background: `${colors.secondary}12`,
+    border: `1px solid ${colors.secondary}55`,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    marginTop: '12px',
+    transition: 'all 0.2s ease',
+  },
   resetTaskButton: {
     padding: '8px 14px',
     fontSize: '12px',
@@ -255,36 +273,36 @@ const styles: Record<string, React.CSSProperties> = {
   sessionComplete: {
     display: 'flex',
     flexDirection: 'column' as const,
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'flex-start',
     minHeight: 'calc(100vh - 180px)',
-    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
-    border: `1px solid ${colors.success}40`,
+    background: colors.bgCard,
+    border: `1px solid ${colors.border}`,
     borderRadius: '12px',
-    padding: '40px',
-    boxShadow: `0 0 40px ${colors.success}20`,
+    padding: '48px',
+    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
   },
   completeTitle: {
-    fontSize: '32px',
+    fontSize: '38px',
     fontWeight: 700,
-    color: colors.successLight,
+    color: colors.textPrimary,
     marginBottom: '16px',
     fontFamily: '"JetBrains Mono", monospace',
-    textShadow: `0 0 20px ${colors.success}60`,
+    textShadow: `0 0 20px ${colors.primaryGlow}`,
   },
   completeText: {
-    fontSize: '16px',
-    color: colors.textMuted,
+    fontSize: '18px',
+    color: colors.textSecondary,
     fontFamily: '"JetBrains Mono", monospace',
     marginBottom: '8px',
   },
   completeTime: {
     fontSize: '48px',
     fontWeight: 700,
-    color: colors.success,
+    color: colors.primaryLight,
     marginTop: '20px',
     fontFamily: '"JetBrains Mono", monospace',
-    textShadow: `0 0 30px ${colors.success}80`,
+    textShadow: `0 0 30px ${colors.primaryGlow}`,
     letterSpacing: '2px',
   },
   completeButtons: {
@@ -292,69 +310,177 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '16px',
     marginTop: '32px',
   },
+  summaryOverview: {
+    width: '100%',
+    marginTop: '22px',
+    border: `1px solid ${colors.border}`,
+    borderRadius: '10px',
+    background: colors.bgCard,
+    padding: '16px 18px',
+  },
+  summaryOverviewLabelRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: '8px',
+    marginBottom: '8px',
+  },
+  summaryOverviewValueRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: '8px',
+  },
+  summaryOverviewLabel: {
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '13px',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase' as const,
+    color: colors.textMuted,
+  },
+  summaryOverviewValue: {
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '24px',
+    fontWeight: 700,
+    color: colors.textPrimary,
+  },
   completeButton: {
     padding: '14px 32px',
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: 600,
     color: colors.bgDark,
-    background: `linear-gradient(135deg, ${colors.success} 0%, ${colors.successLight} 100%)`,
+    background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.primaryLight} 100%)`,
     border: 'none',
     borderRadius: '10px',
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
-    boxShadow: `0 0 20px ${colors.success}60`,
+    boxShadow: `0 0 20px ${colors.primaryGlow}`,
   },
   summaryList: {
-    width: '50%',
+    width: '100%',
     marginTop: '24px',
-    borderTop: `1px solid ${colors.border}`,
+    borderTop: `1px solid ${colors.border}90`,
     paddingTop: '16px',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '16px',
   },
   summaryItem: {
     border: `1px solid ${colors.border}`,
     background: colors.bgCard,
     borderRadius: '10px',
-    padding: '12px',
-    marginBottom: '12px',
+    padding: '18px',
+    boxShadow: `0 6px 20px rgba(0, 0, 0, 0.25)`,
   },
   summaryItemHeader: {
-    display: 'block',
-    fontFamily: '"JetBrains Mono", monospace',
-    marginBottom: '6px',
-    color: colors.textPrimary,
-    fontSize: '16px',
-    fontWeight: 600,
-  },
-  summaryTaskType: {
-    color: colors.primaryLight,
-    fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '14px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: '8px',
   },
-  summaryMeta: {
-    color: colors.textSecondary,
+  summaryItemTitle: {
     fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '14px',
-    marginBottom: '6px',
+    color: colors.textPrimary,
+    fontSize: '24px',
+    fontWeight: 600,
   },
-  summaryKeys: {
+  summaryTaskBadge: {
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '13px',
+    fontWeight: 700,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.8px',
+    padding: '7px 13px',
+    borderRadius: '999px',
+    border: `1px solid ${colors.primary}40`,
+    background: `${colors.primary}20`,
+    color: colors.primaryLight,
+  },
+  summaryTaskType: {
     color: colors.textMuted,
     fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '14px',
-    lineHeight: 1.4,
+    fontSize: '15px',
+    marginBottom: '8px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.8px',
+  },
+  summaryMetaRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '10px',
+    marginBottom: '8px',
+  },
+  summaryMetaCard: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '4px',
+    border: `1px solid ${colors.border}`,
+    background: colors.bgCard,
+    borderRadius: '8px',
+    padding: '8px 10px',
+  },
+  summaryMetaCardApm: {
+    borderColor: `${colors.primary}60`,
+    background: `${colors.primary}16`,
+  },
+  summaryMetaCardDuration: {
+    borderColor: `${colors.secondary}60`,
+    background: `${colors.secondary}16`,
+  },
+  summaryMetaCardKeys: {
+    borderColor: `${colors.warning}60`,
+    background: `${colors.warning}16`,
+  },
+  summaryMetaLabel: {
+    color: '#cbd5e1',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '12px',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase' as const,
+  },
+  summaryMetaValue: {
+    color: '#ffffff',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '20px',
+    fontWeight: 700,
+  },
+  summaryKeys: {
+    border: '1px solid rgba(255, 255, 255, 0.35)',
+    background: '#000000',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    marginBottom: '10px',
+  },
+  summaryKeysLabel: {
+    color: '#cbd5e1',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '13px',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase' as const,
+    marginBottom: '4px',
+  },
+  summaryKeysValue: {
+    color: '#ffffff',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '22px',
+    lineHeight: 1.55,
+    fontWeight: 700,
+  },
+  summaryEmpty: {
+    color: colors.textMuted,
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '16px',
   },
   summaryCodeLabel: {
     color: colors.textSecondary,
     fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '14px',
+    fontSize: '16px',
     marginTop: '8px',
     marginBottom: '6px',
   },
   summaryCodeBox: {
-    background: '#0a0a0f',
-    border: `1px solid ${colors.border}`,
+    background: '#282c34',
+    border: '1px solid #3e4451',
     borderRadius: '8px',
-    overflow: 'hidden',
+    overflowX: 'auto' as const,
   },
   summaryCodeRow: {
     display: 'flex',
@@ -362,9 +488,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryCodeLineNo: {
     width: '36px',
-    color: colors.textMuted,
-    background: '#12121a',
-    borderRight: `1px solid ${colors.border}`,
+    color: '#5c6370',
+    background: '#21252b',
+    borderRight: '1px solid #3e4451',
     padding: '2px 6px',
     textAlign: 'right' as const,
     fontFamily: '"JetBrains Mono", monospace',
@@ -373,7 +499,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryCodeLineText: {
     flex: 1,
-    color: colors.textPrimary,
+    color: '#abb2bf',
     padding: '2px 8px',
     fontFamily: '"JetBrains Mono", monospace',
     fontSize: '13px',
@@ -389,9 +515,27 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: 'rgba(236, 72, 153, 0.35)',
     outline: '1px solid #ec4899',
   },
+  summaryTokenKeyword: {
+    color: '#c678dd',
+  },
+  summaryTokenType: {
+    color: '#e5c07b',
+  },
+  summaryTokenString: {
+    color: '#98c379',
+  },
+  summaryTokenNumber: {
+    color: '#d19a66',
+  },
+  summaryTokenComment: {
+    color: '#5c6370',
+  },
+  summaryTokenFunction: {
+    color: '#61afef',
+  },
   homeButton: {
     padding: '14px 32px',
-    fontSize: '16px',
+    fontSize: '18px',
     fontWeight: 600,
     color: colors.textSecondary,
     background: 'transparent',
@@ -534,6 +678,127 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
+const setSnippetHighlight = StateEffect.define<{ from: number; to: number; taskType: Task['type'] } | null>();
+
+const snippetHighlightField = StateField.define({
+  create() {
+    return Decoration.none;
+  },
+  update(decorations, tr) {
+    decorations = decorations.map(tr.changes);
+    for (const effect of tr.effects) {
+      if (!effect.is(setSnippetHighlight)) continue;
+      if (!effect.value) return Decoration.none;
+      const { from, to, taskType } = effect.value;
+      const clampedFrom = Math.max(0, from);
+      const clampedTo = Math.max(clampedFrom, to);
+      if (clampedTo <= clampedFrom) return Decoration.none;
+
+      const builder = new RangeSetBuilder<Decoration>();
+      builder.add(
+        clampedFrom,
+        clampedTo,
+        Decoration.mark({
+          class: taskType === 'delete' ? 'cm-summary-delete-highlight' : 'cm-summary-navigate-highlight',
+        }),
+      );
+      return builder.finish();
+    }
+    return decorations;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+const SummarySnippetEditor: React.FC<{
+  code: string;
+  taskType: Task['type'];
+  highlightFrom: number | null;
+  highlightTo: number | null;
+}> = ({ code, taskType, highlightFrom, highlightTo }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const hasHighlight = highlightFrom !== null && highlightTo !== null && highlightTo > highlightFrom;
+    const selection = hasHighlight
+      ? { anchor: highlightFrom, head: highlightTo }
+      : { anchor: 0 };
+
+    const initialState = EditorState.create({
+      doc: code,
+      selection,
+      extensions: [
+        cpp(),
+        oneDark,
+        drawSelection(),
+        snippetHighlightField,
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+        EditorView.theme({
+          '&': {
+            fontSize: '15px',
+            fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+            backgroundColor: '#282c34',
+          },
+          '.cm-scroller': {
+            overflowX: 'auto',
+          },
+          '.cm-content': {
+            padding: '8px 10px',
+          },
+          '.cm-gutters': {
+            backgroundColor: '#21252b',
+            borderRight: '1px solid #3e4451',
+            color: '#5c6370',
+          },
+          '.cm-lineNumbers .cm-gutterElement': {
+            color: '#5c6370',
+          },
+          '&.cm-focused': {
+            outline: 'none',
+          },
+          '.cm-summary-navigate-highlight': {
+            backgroundColor: 'rgba(6, 182, 212, 0.35)',
+            outline: '1px solid #06b6d4',
+          },
+          '.cm-summary-delete-highlight': {
+            backgroundColor: 'rgba(236, 72, 153, 0.35)',
+            outline: '1px solid #ec4899',
+          },
+          '.cm-selectionBackground': {
+            backgroundColor: 'transparent !important',
+          },
+        }),
+      ],
+    });
+
+    const view = new EditorView({
+      state: initialState,
+      parent: containerRef.current,
+    });
+    viewRef.current = view;
+
+    if (hasHighlight) {
+      view.dispatch({
+        effects: setSnippetHighlight.of({
+          from: highlightFrom,
+          to: highlightTo,
+          taskType,
+        }),
+      });
+    }
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [code, taskType, highlightFrom, highlightTo]);
+
+  return <div ref={containerRef} />;
+};
+
 const PracticeEditor: React.FC = () => {
   const navigate = useNavigate();
   const editorRef = useRef<VimRaceEditorHandle>(null);
@@ -591,7 +856,7 @@ const PracticeEditor: React.FC = () => {
     return `${seconds}.${tenths}s`;
   };
 
-  const formatKeyLabel = useCallback((key: string): string => {
+  const formatKeyLabel = useCallback((key: string): string | null => {
     if (key === ' ') return 'Space';
     if (key === 'Escape') return 'Esc';
     if (key === 'ArrowLeft') return 'Left';
@@ -599,7 +864,7 @@ const PracticeEditor: React.FC = () => {
     if (key === 'ArrowUp') return 'Up';
     if (key === 'ArrowDown') return 'Down';
     if (key === 'Control') return 'Ctrl';
-    if (key === 'Meta') return 'Meta';
+    if (key === 'Meta') return null;
     if (key === 'Alt') return 'Alt';
     if (key === 'Shift') return 'Shift';
     return key;
@@ -664,7 +929,9 @@ const PracticeEditor: React.FC = () => {
       dtMs,
     });
     const keyLabel = formatKeyLabel(event.key);
-    setRecentKeys((prev) => [...prev, keyLabel].slice(-40));
+    if (keyLabel) {
+      setRecentKeys((prev) => [...prev, keyLabel].slice(-40));
+    }
   }, [formatKeyLabel, isSessionComplete]);
 
   // Start practice session when user clicks Ready
@@ -718,6 +985,21 @@ const PracticeEditor: React.FC = () => {
     }
   }, []);
 
+  const resetPracticeRunState = useCallback(() => {
+    setTaskProgress(0);
+    setIsTaskComplete(false);
+    isTaskCompleteRef.current = false;
+    setIsSessionComplete(false);
+    setSessionStartTime(Date.now());
+    setElapsedTime(0);
+    setFinalTime(0);
+    currentTaskIdRef.current = null;
+    taskKeystrokesRef.current = [];
+    submittedTaskIdsRef.current.clear();
+    setRecentKeys([]);
+    setTaskSummaries([]);
+  }, []);
+
   // Fetch a new practice session (state only — task setup handled by effect)
   const fetchPracticeSession = useCallback(async () => {
     try {
@@ -726,22 +1008,24 @@ const PracticeEditor: React.FC = () => {
 
       setTasks(data.tasks);
       setNumTasks(data.numTasks);
-      setTaskProgress(0);
-      setIsTaskComplete(false);
-      isTaskCompleteRef.current = false;
-      setIsSessionComplete(false);
-      setSessionStartTime(Date.now());
-      setElapsedTime(0);
-      setFinalTime(0);
-      currentTaskIdRef.current = null;
-      taskKeystrokesRef.current = [];
-      submittedTaskIdsRef.current.clear();
-      setRecentKeys([]);
-      setTaskSummaries([]);
+      resetPracticeRunState();
     } catch (error) {
       console.error('Failed to fetch practice session:', error);
     }
-  }, []);
+  }, [resetPracticeRunState]);
+
+  const restartSameTasks = useCallback(() => {
+    const sameTasks = tasksRef.current;
+    if (sameTasks.length === 0) {
+      void fetchPracticeSession();
+      return;
+    }
+
+    setNumTasks(sameTasks.length);
+    resetPracticeRunState();
+    setupTaskInEditor(sameTasks[0]!);
+    editorRef.current?.view?.focus();
+  }, [fetchPracticeSession, resetPracticeRunState, setupTaskInEditor]);
 
   // Trigger initial fetch when user clicks Ready
   useEffect(() => {
@@ -797,7 +1081,9 @@ const PracticeEditor: React.FC = () => {
       const startedAt = taskStartedAtRef.current;
       const completedAt = Date.now();
       const eventsSnapshot = [...taskKeystrokesRef.current];
-      const keyLabels = eventsSnapshot.map((event) => formatKeyLabel(event.key));
+      const keyLabels = eventsSnapshot
+        .map((event) => formatKeyLabel(event.key))
+        .filter((label): label is string => Boolean(label));
       const visibleKeyCount = 30;
       const keySequence = keyLabels.length <= visibleKeyCount
         ? keyLabels.join(' ')
@@ -918,6 +1204,26 @@ const PracticeEditor: React.FC = () => {
 
   // Progress percentage
   const progressPercent = numTasks > 0 ? ((taskProgress + (isTaskComplete ? 1 : 0)) / numTasks) * 100 : 0;
+  const summaryAverages = useMemo(() => {
+    const count = taskSummaries.length;
+    if (count === 0) return null;
+
+    let totalDurationMs = 0;
+    let totalKeys = 0;
+    let totalApm = 0;
+
+    for (const summary of taskSummaries) {
+      totalDurationMs += summary.durationMs;
+      totalKeys += summary.keyCount;
+      totalApm += summary.durationMs > 0 ? summary.keyCount / (summary.durationMs / 60000) : 0;
+    }
+
+    return {
+      apm: Math.round(totalApm / count),
+      durationMs: Math.round(totalDurationMs / count),
+      keys: Math.round(totalKeys / count),
+    };
+  }, [taskSummaries]);
 
   // Task type display
   const getTaskTypeDisplay = (task: Task | null) => {
@@ -927,86 +1233,6 @@ const PracticeEditor: React.FC = () => {
   };
 
   const taskDisplay = getTaskTypeDisplay(currentTask);
-
-  const renderSummarySnippet = useCallback((summary: TaskSummary): React.ReactNode => {
-    const lines = summary.codePreview.split('\n');
-    const lineStarts: number[] = [];
-    let cursor = 0;
-    for (let i = 0; i < lines.length; i++) {
-      lineStarts.push(cursor);
-      cursor += lines[i]!.length + 1;
-    }
-
-    const highlightFrom = summary.highlightFrom;
-    const highlightTo = summary.highlightTo;
-    const hasHighlight = highlightFrom !== null && highlightTo !== null && highlightTo > highlightFrom;
-
-    let focusLine = 0;
-    if (hasHighlight) {
-      for (let i = 0; i < lines.length; i++) {
-        const lineStart = lineStarts[i]!;
-        const lineEnd = lineStart + lines[i]!.length;
-        if (highlightFrom >= lineStart && highlightFrom <= lineEnd) {
-          focusLine = i;
-          break;
-        }
-      }
-    }
-
-    const previewLineLimit = 8;
-    const startLine = Math.max(0, focusLine - Math.floor(previewLineLimit / 2));
-    const endLine = Math.min(lines.length, startLine + previewLineLimit);
-    const highlightStyle = summary.taskType === 'delete' ? styles.summaryHighlightDelete : styles.summaryHighlightNavigate;
-
-    return (
-      <>
-        {lines.slice(startLine, endLine).map((line, idx) => {
-          const lineIndex = startLine + idx;
-          const lineStart = lineStarts[lineIndex]!;
-          const lineEnd = lineStart + line.length;
-
-          if (!hasHighlight) {
-            return (
-              <div key={`line-${lineIndex}`} style={styles.summaryCodeRow}>
-                <div style={styles.summaryCodeLineNo}>{lineIndex + 1}</div>
-                <div style={styles.summaryCodeLineText}>{line || ' '}</div>
-              </div>
-            );
-          }
-
-          const overlapStart = Math.max(highlightFrom, lineStart);
-          const overlapEnd = Math.min(highlightTo, lineEnd);
-          const hasLineOverlap = overlapEnd > overlapStart;
-
-          if (!hasLineOverlap) {
-            return (
-              <div key={`line-${lineIndex}`} style={styles.summaryCodeRow}>
-                <div style={styles.summaryCodeLineNo}>{lineIndex + 1}</div>
-                <div style={styles.summaryCodeLineText}>{line || ' '}</div>
-              </div>
-            );
-          }
-
-          const localStart = overlapStart - lineStart;
-          const localEnd = overlapEnd - lineStart;
-          const before = line.slice(0, localStart);
-          const marked = line.slice(localStart, localEnd) || ' ';
-          const after = line.slice(localEnd);
-
-          return (
-            <div key={`line-${lineIndex}`} style={styles.summaryCodeRow}>
-              <div style={styles.summaryCodeLineNo}>{lineIndex + 1}</div>
-              <div style={styles.summaryCodeLineText}>
-                {before}
-                <span style={highlightStyle}>{marked}</span>
-                {after}
-              </div>
-            </div>
-          );
-        })}
-      </>
-    );
-  }, []);
 
   // Ready screen before practice starts
   if (!isReady) {
@@ -1048,23 +1274,43 @@ const PracticeEditor: React.FC = () => {
   return (
     <div style={styles.container}>
       <div style={styles.raceContainer}>
-        {/* Header */}
-        <div style={styles.header}>
-          <div style={styles.title}>Vim Racing - Practice</div>
-          <div style={styles.timer}>{formatTime(isSessionComplete ? finalTime : elapsedTime)}</div>
-          <button style={styles.exitButton} onClick={() => navigate('/')}>
-            Exit
-          </button>
-        </div>
+        {!isSessionComplete && (
+          <div style={styles.header}>
+            <div style={styles.title}>Vim Racing - Practice</div>
+            <div style={styles.timer}>{formatTime(elapsedTime)}</div>
+            <button style={styles.exitButton} onClick={() => navigate('/')}>
+              Exit
+            </button>
+          </div>
+        )}
 
         {isSessionComplete ? (
           <div style={styles.sessionComplete}>
             <div style={styles.completeTitle}>Practice Summary</div>
-            <div style={styles.completeText}>Completed {numTasks} tasks</div>
-            <div style={styles.completeTime}>{formatTime(finalTime)}</div>
+            <div style={styles.summaryOverview}>
+              <div style={styles.summaryOverviewLabelRow}>
+                <span style={styles.summaryOverviewLabel}>Total Time</span>
+                <span style={styles.summaryOverviewLabel}>Avg APM</span>
+                <span style={styles.summaryOverviewLabel}>Avg Duration</span>
+                <span style={styles.summaryOverviewLabel}>Avg Keys</span>
+              </div>
+              <div style={styles.summaryOverviewValueRow}>
+                <span style={{ ...styles.summaryOverviewValue, color: colors.primaryLight }}>{formatTime(finalTime)}</span>
+                <span style={{ ...styles.summaryOverviewValue, color: colors.primaryLight }}>{summaryAverages?.apm ?? '--'}</span>
+                <span style={{ ...styles.summaryOverviewValue, color: colors.secondaryLight }}>
+                  {summaryAverages ? formatTime(summaryAverages.durationMs) : '--'}
+                </span>
+                <span style={{ ...styles.summaryOverviewValue, color: colors.warning }}>
+                  {summaryAverages?.keys ?? '--'}
+                </span>
+              </div>
+            </div>
             <div style={styles.completeButtons}>
-              <button style={styles.completeButton} onClick={fetchPracticeSession}>
-                Restart
+              <button style={styles.completeButton} onClick={restartSameTasks}>
+                Restart Same Tasks
+              </button>
+              <button style={styles.homeButton} onClick={fetchPracticeSession}>
+                New Tasks
               </button>
               <button style={styles.homeButton} onClick={() => navigate('/')}>
                 Home
@@ -1072,35 +1318,51 @@ const PracticeEditor: React.FC = () => {
             </div>
             <div style={styles.summaryList}>
               {taskSummaries.length === 0 && (
-                <div style={styles.summaryKeys}>No task details recorded for this run.</div>
+                <div style={{ ...styles.summaryEmpty, gridColumn: '1 / -1' }}>No task details recorded for this run.</div>
               )}
               {taskSummaries.map((summary) => {
-                const speed = summary.durationMs > 0
+                const keysPerSecond = summary.durationMs > 0
                   ? (summary.keyCount / (summary.durationMs / 1000)).toFixed(2)
                   : '0.00';
+                const isDeleteTask = summary.taskType === 'delete';
+                const badgeStyle: React.CSSProperties = {
+                  ...styles.summaryTaskBadge,
+                  border: `1px solid ${isDeleteTask ? colors.secondary : colors.primary}40`,
+                  background: `${isDeleteTask ? colors.secondary : colors.primary}20`,
+                  color: isDeleteTask ? colors.secondaryLight : colors.primaryLight,
+                };
                 return (
                   <div key={summary.taskId} style={styles.summaryItem}>
                     <div style={styles.summaryItemHeader}>
-                      Task {summary.taskIndex}
+                      <span style={styles.summaryItemTitle}>Task {summary.taskIndex}</span>
+                      <span style={badgeStyle}>{formatTaskTypeLabel(summary.taskType)}</span>
                     </div>
-                    <div style={styles.summaryTaskType}>
-                      Type: {formatTaskTypeLabel(summary.taskType)}
-                    </div>
-                    <div style={styles.summaryMeta}>
-                      Speed: {speed} keys/s
-                    </div>
-                    <div style={styles.summaryMeta}>
-                      Duration: {formatTime(summary.durationMs)}
-                    </div>
-                    <div style={styles.summaryMeta}>
-                      Key Events: {summary.keyCount}
+                    <div style={styles.summaryMetaRow}>
+                      <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardApm }}>
+                        <span style={styles.summaryMetaLabel}>Keys/s</span>
+                        <span style={styles.summaryMetaValue}>{keysPerSecond}</span>
+                      </div>
+                      <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardDuration }}>
+                        <span style={styles.summaryMetaLabel}>Duration</span>
+                        <span style={styles.summaryMetaValue}>{formatTime(summary.durationMs)}</span>
+                      </div>
+                      <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardKeys }}>
+                        <span style={styles.summaryMetaLabel}>Keys</span>
+                        <span style={styles.summaryMetaValue}>{summary.keyCount}</span>
+                      </div>
                     </div>
                     <div style={styles.summaryKeys}>
-                      Keys: {summary.keySequence || 'No key events recorded'}
+                      <div style={styles.summaryKeysLabel}>Key Sequence</div>
+                      <div style={styles.summaryKeysValue}>{summary.keySequence || 'No key events recorded'}</div>
                     </div>
                     <div style={styles.summaryCodeLabel}>Snippet</div>
                     <div style={styles.summaryCodeBox}>
-                      {renderSummarySnippet(summary)}
+                      <SummarySnippetEditor
+                        code={summary.codePreview}
+                        taskType={summary.taskType}
+                        highlightFrom={summary.highlightFrom}
+                        highlightTo={summary.highlightTo}
+                      />
                     </div>
                   </div>
                 );
@@ -1210,7 +1472,11 @@ const PracticeEditor: React.FC = () => {
                   </button>
 
                   <button style={styles.restartButton} onClick={fetchPracticeSession}>
-                    Restart Session
+                    Restart with New Tasks
+                  </button>
+
+                  <button style={styles.restartSameButton} onClick={restartSameTasks}>
+                    Restart Same Tasks
                   </button>
                 </div>
               </div>
