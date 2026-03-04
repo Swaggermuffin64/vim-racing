@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { Server, Socket } from 'socket.io';
 import { generatePositionTask, generatePositionTasks, generateDeleteTasks, checkPositionTask } from './tasks.js';
-import type { KeystrokeSource, PositionTask, Task, TaskKeystrokeSubmission, TaskResponse } from './types.js';
+import type { KeystrokeSource, PositionTask, PracticeSummary, Task, TaskKeystrokeSubmission, TaskResponse } from './types.js';
 import type { 
   ClientToServerEvents, 
   ServerToClientEvents, 
@@ -234,16 +234,32 @@ fastify.post<{
 
 // Get a practice session (10 tasks: 5 position + 5 delete, shuffled)
 fastify.get('/api/task/practice', async () => {
-  const NUM_TASKS = 4;
+  const NUM_TASKS = 10;
   const tasksPerType = Math.floor(NUM_TASKS / 2);
   
   const positionTasks: Task[] = generatePositionTasks(tasksPerType);
   const deleteTasks: Task[] = generateDeleteTasks(tasksPerType);
   const allTasks = shuffle([...positionTasks, ...deleteTasks]);
+  const navigateTasksWithRecommendation = positionTasks.reduce((count, task) => {
+    if (task.type !== 'navigate') return count;
+    return task.recommendedSequence && typeof task.recommendedWeight === 'number' ? count + 1 : count;
+  }, 0);
+  const deleteTasksWithRecommendation = deleteTasks.reduce((count, task) => {
+    if (task.type !== 'delete') return count;
+    return task.recommendedSequence && typeof task.recommendedWeight === 'number' ? count + 1 : count;
+  }, 0);
+  const practiceSummary: PracticeSummary = {
+    totalTasks: allTasks.length,
+    navigateTasks: positionTasks.length,
+    deleteTasks: deleteTasks.length,
+    navigateTasksWithRecommendation,
+    deleteTasksWithRecommendation,
+  };
   
   return {
     tasks: allTasks,
     numTasks: NUM_TASKS,
+    practiceSummary,
     startTime: Date.now(),
   };
 });

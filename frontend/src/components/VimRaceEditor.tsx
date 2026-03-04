@@ -55,6 +55,27 @@ const disableMouseInteraction = EditorView.domEventHandlers({
   selectstart: () => true,
 });
 
+/** Allow click-to-focus but block mouse cursor movement/selection. */
+const focusOnlyMouseInteraction = EditorView.domEventHandlers({
+  mousedown: (event, view) => {
+    event.preventDefault();
+    view.focus();
+    return true;
+  },
+  click: (event, view) => {
+    event.preventDefault();
+    view.focus();
+    return true;
+  },
+  dblclick: (event, view) => {
+    event.preventDefault();
+    view.focus();
+    return true;
+  },
+  contextmenu: () => true,
+  selectstart: () => true,
+});
+
 function shouldDebugUndo(): boolean {
   return typeof globalThis !== 'undefined'
     && (globalThis as { __vimRacingDebugUndo?: boolean }).__vimRacingDebugUndo === true;
@@ -102,6 +123,20 @@ interface VimRaceEditorProps {
    * `false` to auto-refocus. Defaults to never allowing blur.
    */
   shouldAllowBlur?: () => boolean;
+  /**
+   * Allow mouse interactions (click-to-focus, click-to-move-cursor).
+   * Defaults to false for keyboard-only race mode behavior.
+   */
+  allowMouseNavigation?: boolean;
+  /**
+   * Allow mouse clicks to focus editor, but block mouse cursor movement.
+   * Ignored when allowMouseNavigation is true.
+   */
+  allowMouseFocusOnly?: boolean;
+  /**
+   * Auto-focus editor once on mount. Defaults to true.
+   */
+  autoFocusOnMount?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +144,17 @@ interface VimRaceEditorProps {
 // ---------------------------------------------------------------------------
 
 export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>(
-  ({ initialDoc, onReady, onCursorChange, onDocChange, onKeyStroke, shouldAllowBlur }, ref) => {
+  ({
+    initialDoc,
+    onReady,
+    onCursorChange,
+    onDocChange,
+    onKeyStroke,
+    shouldAllowBlur,
+    allowMouseNavigation = false,
+    allowMouseFocusOnly = false,
+    autoFocusOnMount = true,
+  }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
 
@@ -176,7 +221,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
           drawSelection(),
           highlightActiveLine(),
           highlightActiveLineGutter(),
-          disableMouseInteraction,
+          ...(allowMouseNavigation ? [] : [allowMouseFocusOnly ? focusOnlyMouseInteraction : disableMouseInteraction]),
           keymap.of([...defaultKeymap, ...searchKeymap]),
           EditorView.theme({
             '&': {
@@ -337,7 +382,9 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
       view.contentDOM.addEventListener('blur', handleBlur);
 
       // Auto-focus on mount.
-      view.focus();
+      if (autoFocusOnMount) {
+        view.focus();
+      }
 
       return () => {
         view.contentDOM.removeEventListener('keydown', handleEscapeKey, true);
@@ -346,7 +393,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
         view.destroy();
         viewRef.current = null;
       };
-      // initialDoc is intentionally read only on mount.
+      // initialDoc and autoFocusOnMount are intentionally read only on mount.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

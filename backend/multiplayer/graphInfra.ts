@@ -1,20 +1,6 @@
 import type { codeSnippet, IntTuple } from "../types.js";
-import { CODE_SNIPPIT_OBJECTS } from "../codeSnippets.js";
-import { buildSnippetGraph, shortestVimSequence } from "./vimGraph.js";
-//Function that takes in a offset for a code snippet and calculates all offsets vim motions would bring you to
-function logCodeOffsets(codeSnippet: codeSnippet){
-    let i = 0;
-    for (const char of codeSnippet.code) {
-        if (char === '\n') {
-            console.log('NEWLINE AT', i);
-        }
-        else {
-            console.log(char, i);
-        }
-        i++;
-    }
-    console.log("length", codeSnippet.code.length)
-}
+
+const WANTED_EOL_RELATIVE_X = Number.MAX_SAFE_INTEGER;
 //return zero indexed line for any offset
 export function getLineFromOffset(offset: number, codeSnippet: codeSnippet) {
     const allLineOffsets = codeSnippet.lineOffsetRanges;
@@ -23,7 +9,9 @@ export function getLineFromOffset(offset: number, codeSnippet: codeSnippet) {
         const lineOffsets = allLineOffsets[i];
 
         if (!lineOffsets || lineOffsets.length < 2) continue;
-        if (offset >= lineOffsets[0] && offset < lineOffsets[1]){
+        // Treat newline boundary as belonging to this line so motions like '$'
+        // don't fall back to stale savedRelativeX when cursor is at EOL boundary.
+        if (offset >= lineOffsets[0] && offset <= lineOffsets[1]){
             return i;
         }
     }
@@ -34,7 +22,6 @@ export function resolveKeyOffset(offset: number, key: string, codeSnippet: codeS
     const lineOffsetRanges = codeSnippet.lineOffsetRanges;
     if (!lineOffsetRanges) return [offset, savedRelativeX];
     const lineStartOffsets = lineOffsetRanges.map(range => range[0]);
-    const lineEndOffsets = lineOffsetRanges.map(range => range[1] - 1); // don't include newline
     const lineNumber = getLineFromOffset(offset, codeSnippet);
     const totalLines = lineOffsetRanges.length;
     const currentLineRange = lineOffsetRanges[lineNumber];
@@ -46,47 +33,31 @@ export function resolveKeyOffset(offset: number, key: string, codeSnippet: codeS
 
     switch (motion) {
         case 'h': {
-            //TODO, fix savedRelativeX logic
-            //doesn't move if at 0
-            if (offset === 0) {
-               return [0, savedRelativeX]; 
+            // Vim default: h does not wrap to previous line.
+            if (offset <= lineStart) {
+               return [offset, savedRelativeX];
             }
-            // for both cases under, savedRelative X changes
-            // if at start of line, go to line above, skip \n
-            let newRelativeX: number; 
-            let newOffset: number;
-            // if moving up to the line before
-            if (lineStartOffsets.includes(offset)) {
-                const prevLineRange = lineOffsetRanges[lineNumber-1]; 
-                if (!prevLineRange) return [-1, -1];
-                newOffset = offset - 2;
-                newRelativeX = newOffset - prevLineRange[0];
-                return [newOffset, newRelativeX];
-            } 
-            // otherwise in middle of line, just -1 
-            const currentLineRange = lineOffsetRanges[lineNumber];
-            if (!currentLineRange) return [-1, -1];
-            newOffset = offset-1;
-            newRelativeX = newOffset - currentLineRange[0];
-            return [newOffset, newRelativeX];
+            const newOffset = offset - 1;
+            return [newOffset, newOffset - lineStart];
         }
 
         case 'l': {
-            if (offset === codeSnippet.code.length - 1) {
-                return [codeSnippet.code.length - 1, savedRelativeX]
+            // Vim default: l does not wrap to next line.
+            if (offset >= lineEnd) {
+                return [offset, savedRelativeX];
             }
-            // for both cases under, savedRelativeX changes 
-            let newRelativeX: number; 
-            let newOffset: number;
-            if (lineEndOffsets.includes(offset)) {
-                newRelativeX = 0; //always start of next line
-                return [offset + 2, newRelativeX];  //considering newline jump
-            }
-            const currentLineRange = lineOffsetRanges[lineNumber];
-            if (!currentLineRange) return [-1, -1];
-            newOffset = offset+1;
-            newRelativeX = newOffset - currentLineRange[0];
-            return [newOffset, newRelativeX];
+            const newOffset = offset + 1;
+            return [newOffset, newOffset - lineStart];
+        }
+
+        case '0': {
+            // Move to first character in the current line.
+            return [lineStart, 0];
+        }
+
+        case '$': {
+            // Move to last character in the current line and keep "want EOL" goal for j/k.
+            return [lineEnd, WANTED_EOL_RELATIVE_X];
         }
 
         case 'j': {
@@ -99,11 +70,14 @@ export function resolveKeyOffset(offset: number, key: string, codeSnippet: codeS
             const nextLineRange = lineOffsetRanges[lineNumber + 1];
             if (!currentLineRange || !nextLineRange) return [offset, savedRelativeX];
 
-            // cases if savedRelativeX is larger than the next line
-            
+            // Vim "$ then j/k" behavior: keep jumping to EOL.
+            if (savedRelativeX === WANTED_EOL_RELATIVE_X) {
+                return [nextLineRange[1] - 1, WANTED_EOL_RELATIVE_X];
+            }
+
+            // If goal column is larger than next line, clamp cursor but keep goal column.
             const nextLineLength = nextLineRange[1] - nextLineRange[0];
             if (nextLineLength <= savedRelativeX) {      //including newline so <=
-                // move to end of next line
                 return [nextLineRange[1]-1, savedRelativeX];
             }
 
@@ -118,8 +92,12 @@ export function resolveKeyOffset(offset: number, key: string, codeSnippet: codeS
             const prevLineRange = lineOffsetRanges[lineNumber-1];
             if (!currentLineRange || !prevLineRange) return [offset, savedRelativeX];
 
-            //cases if savedRelativeX larger than above line
+            // Vim "$ then j/k" behavior: keep jumping to EOL.
+            if (savedRelativeX === WANTED_EOL_RELATIVE_X) {
+                return [prevLineRange[1] - 1, WANTED_EOL_RELATIVE_X];
+            }
 
+            // If goal column is larger than previous line, clamp cursor but keep goal column.
             const prevLineLength = prevLineRange[1]-prevLineRange[0];
             if (prevLineLength <= savedRelativeX) {
                 return [prevLineRange[1]-1, savedRelativeX];
@@ -143,6 +121,40 @@ export function resolveKeyOffset(offset: number, key: string, codeSnippet: codeS
             const lineStart = lineStartOffsets[getLineFromOffset(nextWordIndices[0], codeSnippet)];
             if (lineStart === undefined) return [-1, -1];
             return [newOffset, newOffset-lineStart]; 
+        }
+        case 'e': {
+            // Move to end of current word, or next word if already at end/in whitespace.
+            if (offset === codeSnippet.code.length - 1) {
+                return [offset, savedRelativeX];
+            }
+            const words = codeSnippet.wordIndices;
+            if (words.length === 0) return [offset, savedRelativeX];
+
+            const currentWordIndex = findWordIndex(offset, codeSnippet);
+            const currentWord = words[currentWordIndex];
+            if (!currentWord) return [offset, savedRelativeX];
+            const [currentWordStart, currentWordEndExclusive] = currentWord;
+            const currentWordEnd = currentWordEndExclusive - 1;
+            const nextWord = words[currentWordIndex + 1];
+
+            let targetWord = currentWord;
+            // If currently at/after the end of this word, or in trailing whitespace for this word,
+            // advance to next word when possible.
+            if ((offset >= currentWordEnd || offset >= currentWordEndExclusive) && nextWord) {
+                targetWord = nextWord;
+            }
+            // Before first word start (e.g. leading spaces) should stay with current word.
+            if (offset < currentWordStart) {
+                targetWord = currentWord;
+            }
+
+            const targetEndExclusive = targetWord[1];
+            if (targetEndExclusive === undefined) return [offset, savedRelativeX];
+            const newOffset = targetEndExclusive - 1;
+            const newLineNumber = getLineFromOffset(newOffset, codeSnippet);
+            const newLineStart = lineStartOffsets[newLineNumber];
+            if (newLineStart === undefined) return [offset, savedRelativeX];
+            return [newOffset, newOffset - newLineStart];
         }
         case 'b': {
             //don't move at start
@@ -213,10 +225,12 @@ export function resolveKeyOffset(offset: number, key: string, codeSnippet: codeS
 }
 
 export function multiKeyResolve(initialOffset:number, key:string, factor: number, codeSnippet: codeSnippet, startingRelativeX: number): IntTuple[] {
+    // factor is provided separately; keep key literal so '0' works as motion.
+    const normalizedFactor = Math.max(0, Math.floor(factor));
     const positions = [];
     let offset = initialOffset;
     let relativeX = startingRelativeX;
-    for (let i = 0; i < factor; i++) {
+    for (let i = 0; i < normalizedFactor; i++) {
         [offset, relativeX] = resolveKeyOffset(offset, key, codeSnippet, relativeX);
         positions.push([offset, relativeX] as IntTuple);
     }
@@ -252,16 +266,3 @@ export function findWordIndex(offset: number, codeSnippet: codeSnippet): number 
     //case where offset is are spaces before the first space
     return 0;
 }
-
-const exampleCodeSnippet = CODE_SNIPPIT_OBJECTS[0] as codeSnippet;
-logCodeOffsets(exampleCodeSnippet);
-multiKeyResolve(23, 'l', 23, exampleCodeSnippet, 0);
-const graph = buildSnippetGraph(exampleCodeSnippet);
-console.log(exampleCodeSnippet.lineOffsetRanges);
-
-const [w, seq] = shortestVimSequence(graph, exampleCodeSnippet, 76, 0);
-console.log(w, seq);
-//console.log(multiKeyResolve(16, 'f', 4, exampleCodeSnippet, 16));
-//console.log(findMaxFactor(98, 'h', exampleCodeSnippet, 0));
-//console.log(findWordIndex(98, exampleCodeSnippet));
-//console.log(resolveKeyOffset(0, 'fa', exampleCodeSnippet, 0));

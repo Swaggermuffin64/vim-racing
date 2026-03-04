@@ -2,17 +2,14 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { Vim, getCM } from '@replit/codemirror-vim';
 import type { CodeMirrorV } from '@replit/codemirror-vim';
-import { EditorState, Transaction } from '@codemirror/state';
-import { cpp } from '@codemirror/lang-cpp';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView, drawSelection, Decoration } from '@codemirror/view';
-import { StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
+import { Transaction } from '@codemirror/state';
 
-import { Task } from '../types/task';
+import type { PracticeSummary, Task } from '../types/task';
 import type { KeystrokeEvent, TaskKeystrokeSubmission } from '../types/keystroke';
 import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
 import { setDeleteMode, setAllowedDeleteRange, allowReset, setUndoBarrier } from '../extensions/readOnlyNavigation';
 import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
+import { SummaryTaskSandbox } from '../components/SummaryTaskSandbox';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -20,12 +17,19 @@ interface TaskSummary {
   taskIndex: number;
   taskId: string;
   taskType: Task['type'];
+  task: Task;
   durationMs: number;
   keyCount: number;
   keySequence: string;
-  codePreview: string;
-  highlightFrom: number | null;
-  highlightTo: number | null;
+  optimalSequence?: string;
+  ourSolutionKeyCount?: number;
+}
+
+interface PracticeSessionResponse {
+  tasks: Task[];
+  numTasks: number;
+  startTime: number;
+  practiceSummary?: PracticeSummary;
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -320,13 +324,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryOverviewLabelRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
     gap: '8px',
     marginBottom: '8px',
   },
   summaryOverviewValueRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
     gap: '8px',
   },
   summaryOverviewLabel: {
@@ -360,20 +364,63 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: `1px solid ${colors.border}90`,
     paddingTop: '16px',
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gridTemplateColumns: 'minmax(0, 1fr)',
     gap: '16px',
   },
   summaryItem: {
+    position: 'relative',
     border: `1px solid ${colors.border}`,
     background: colors.bgCard,
     borderRadius: '10px',
     padding: '18px',
     boxShadow: `0 6px 20px rgba(0, 0, 0, 0.25)`,
   },
+  summaryItemComplete: {
+    border: `1px solid ${colors.success}60`,
+    boxShadow: `0 0 16px ${colors.success}25, inset 0 1px 0 rgba(255,255,255,0.05)`,
+  },
+  summaryCompleteCheck: {
+    position: 'absolute',
+    top: '12px',
+    right: '12px',
+    width: '24px',
+    height: '24px',
+    borderRadius: '999px',
+    border: `1px solid ${colors.success}90`,
+    background: `${colors.success}30`,
+    color: colors.successLight,
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '15px',
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryItemBody: {
+    display: 'flex',
+    alignItems: 'stretch',
+    gap: '14px',
+    flexWrap: 'wrap' as const,
+  },
+  summaryAnalyticsColumn: {
+    flex: '1 1 360px',
+    minWidth: '320px',
+  },
+  summaryVerticalDivider: {
+    width: '1px',
+    alignSelf: 'stretch',
+    background: colors.border,
+  },
+  summarySnippetColumn: {
+    flex: '1 1 420px',
+    minWidth: '360px',
+    paddingLeft: '14px',
+  },
   summaryItemHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
+    gap: '70px',
     marginBottom: '8px',
   },
   summaryItemTitle: {
@@ -393,6 +440,13 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${colors.primary}40`,
     background: `${colors.primary}20`,
     color: colors.primaryLight,
+  },
+  summaryReplayTitle: {
+    marginLeft: 'auto',
+    fontFamily: '"JetBrains Mono", monospace',
+    color: colors.textPrimary,
+    fontSize: '24px',
+    fontWeight: 600,
   },
   summaryTaskType: {
     color: colors.textMuted,
@@ -464,23 +518,52 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.55,
     fontWeight: 700,
   },
+  summaryComparisonBox: {
+    width: '50%',
+    borderRadius: '8px',
+    padding: '10px 12px',
+    marginBottom: '10px',
+    border: '1px solid transparent',
+  },
+  summaryComparisonLabel: {
+    color: '#cbd5e1',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '13px',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase' as const,
+    marginBottom: '4px',
+  },
+  summaryComparisonValue: {
+    color: '#ffffff',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '20px',
+    lineHeight: 1.4,
+    fontWeight: 700,
+  },
   summaryEmpty: {
     color: colors.textMuted,
     fontFamily: '"JetBrains Mono", monospace',
     fontSize: '16px',
-  },
-  summaryCodeLabel: {
-    color: colors.textSecondary,
-    fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '16px',
-    marginTop: '8px',
-    marginBottom: '6px',
   },
   summaryCodeBox: {
     background: '#282c34',
     border: '1px solid #3e4451',
     borderRadius: '8px',
     overflowX: 'auto' as const,
+    overflowY: 'hidden' as const,
+  },
+  summaryResetButton: {
+    padding: '8px 14px',
+    fontSize: '12px',
+    fontWeight: 600,
+    color: colors.secondary,
+    background: 'transparent',
+    border: `1px solid ${colors.secondary}`,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    transition: 'all 0.2s ease',
+    marginTop: '8px',
   },
   summaryCodeRow: {
     display: 'flex',
@@ -678,127 +761,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
-const setSnippetHighlight = StateEffect.define<{ from: number; to: number; taskType: Task['type'] } | null>();
-
-const snippetHighlightField = StateField.define({
-  create() {
-    return Decoration.none;
-  },
-  update(decorations, tr) {
-    decorations = decorations.map(tr.changes);
-    for (const effect of tr.effects) {
-      if (!effect.is(setSnippetHighlight)) continue;
-      if (!effect.value) return Decoration.none;
-      const { from, to, taskType } = effect.value;
-      const clampedFrom = Math.max(0, from);
-      const clampedTo = Math.max(clampedFrom, to);
-      if (clampedTo <= clampedFrom) return Decoration.none;
-
-      const builder = new RangeSetBuilder<Decoration>();
-      builder.add(
-        clampedFrom,
-        clampedTo,
-        Decoration.mark({
-          class: taskType === 'delete' ? 'cm-summary-delete-highlight' : 'cm-summary-navigate-highlight',
-        }),
-      );
-      return builder.finish();
-    }
-    return decorations;
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
-
-const SummarySnippetEditor: React.FC<{
-  code: string;
-  taskType: Task['type'];
-  highlightFrom: number | null;
-  highlightTo: number | null;
-}> = ({ code, taskType, highlightFrom, highlightTo }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const hasHighlight = highlightFrom !== null && highlightTo !== null && highlightTo > highlightFrom;
-    const selection = hasHighlight
-      ? { anchor: highlightFrom, head: highlightTo }
-      : { anchor: 0 };
-
-    const initialState = EditorState.create({
-      doc: code,
-      selection,
-      extensions: [
-        cpp(),
-        oneDark,
-        drawSelection(),
-        snippetHighlightField,
-        EditorState.readOnly.of(true),
-        EditorView.editable.of(false),
-        EditorView.theme({
-          '&': {
-            fontSize: '15px',
-            fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-            backgroundColor: '#282c34',
-          },
-          '.cm-scroller': {
-            overflowX: 'auto',
-          },
-          '.cm-content': {
-            padding: '8px 10px',
-          },
-          '.cm-gutters': {
-            backgroundColor: '#21252b',
-            borderRight: '1px solid #3e4451',
-            color: '#5c6370',
-          },
-          '.cm-lineNumbers .cm-gutterElement': {
-            color: '#5c6370',
-          },
-          '&.cm-focused': {
-            outline: 'none',
-          },
-          '.cm-summary-navigate-highlight': {
-            backgroundColor: 'rgba(6, 182, 212, 0.35)',
-            outline: '1px solid #06b6d4',
-          },
-          '.cm-summary-delete-highlight': {
-            backgroundColor: 'rgba(236, 72, 153, 0.35)',
-            outline: '1px solid #ec4899',
-          },
-          '.cm-selectionBackground': {
-            backgroundColor: 'transparent !important',
-          },
-        }),
-      ],
-    });
-
-    const view = new EditorView({
-      state: initialState,
-      parent: containerRef.current,
-    });
-    viewRef.current = view;
-
-    if (hasHighlight) {
-      view.dispatch({
-        effects: setSnippetHighlight.of({
-          from: highlightFrom,
-          to: highlightTo,
-          taskType,
-        }),
-      });
-    }
-
-    return () => {
-      view.destroy();
-      viewRef.current = null;
-    };
-  }, [code, taskType, highlightFrom, highlightTo]);
-
-  return <div ref={containerRef} />;
-};
-
 const PracticeEditor: React.FC = () => {
   const navigate = useNavigate();
   const editorRef = useRef<VimRaceEditorHandle>(null);
@@ -818,6 +780,8 @@ const PracticeEditor: React.FC = () => {
   const [editorReadyTick, setEditorReadyTick] = useState(0);
   const [recentKeys, setRecentKeys] = useState<string[]>([]);
   const [taskSummaries, setTaskSummaries] = useState<TaskSummary[]>([]);
+  const [summaryTaskCompletion, setSummaryTaskCompletion] = useState<Record<string, boolean>>({});
+  const [summaryTaskResetTokens, setSummaryTaskResetTokens] = useState<Record<string, number>>({});
 
   // Current task derived from state
   const currentTask = tasks[taskProgress] || null;
@@ -877,14 +841,49 @@ const PracticeEditor: React.FC = () => {
     return 'Change';
   }, []);
 
-  const getTaskHighlightRange = useCallback((task: Task): { from: number | null; to: number | null } => {
-    if (task.type === 'navigate') {
-      return { from: task.targetOffset, to: task.targetOffset + 1 };
+  const normalizeUserKeysForComparison = useCallback((events: KeystrokeEvent[]): string[] => {
+    const modifierKeys = new Set(['Shift', 'Control', 'Alt', 'Meta']);
+    return events
+      .map((event) => event.key)
+      .filter((key) => !modifierKeys.has(key));
+  }, []);
+
+  const expandRecommendedSequence = useCallback((recommendedSequence: string[]): string[] => {
+    // Graph keys are tokenized (e.g. ["2", "l"] or ["fa"]); compare by actual keystrokes.
+    return recommendedSequence.flatMap((token) => token.split(''));
+  }, []);
+
+  const formatKeysForDisplay = useCallback((keys: string[]): string => {
+    const toDisplayToken = (token: string): string => {
+      if (token === 'Backspace') return '←';
+      return token;
+    };
+
+    const compacted: string[] = [];
+    let i = 0;
+    while (i < keys.length) {
+      const key = keys[i];
+      if (!key) {
+        i += 1;
+        continue;
+      }
+      // Merge Vim count digits only when the sequence starts with 1-9.
+      // Standalone '0' remains the 0-motion token.
+      if (/^[1-9]$/.test(key)) {
+        let countToken = key;
+        let j = i + 1;
+        while (j < keys.length && /^[0-9]$/.test(keys[j] ?? '')) {
+          countToken += keys[j];
+          j += 1;
+        }
+        compacted.push(toDisplayToken(countToken));
+        i = j;
+        continue;
+      }
+      compacted.push(toDisplayToken(key));
+      i += 1;
     }
-    if (task.type === 'delete') {
-      return { from: task.targetRange.from, to: task.targetRange.to };
-    }
-    return { from: null, to: null };
+    return compacted.join(' ');
   }, []);
 
   const submitTaskKeystrokes = useCallback(async (
@@ -998,13 +997,15 @@ const PracticeEditor: React.FC = () => {
     submittedTaskIdsRef.current.clear();
     setRecentKeys([]);
     setTaskSummaries([]);
+    setSummaryTaskCompletion({});
+    setSummaryTaskResetTokens({});
   }, []);
 
   // Fetch a new practice session (state only — task setup handled by effect)
   const fetchPracticeSession = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/api/task/practice`);
-      const data = await response.json();
+      const data = (await response.json()) as PracticeSessionResponse;
 
       setTasks(data.tasks);
       setNumTasks(data.numTasks);
@@ -1086,9 +1087,24 @@ const PracticeEditor: React.FC = () => {
         .filter((label): label is string => Boolean(label));
       const visibleKeyCount = 30;
       const keySequence = keyLabels.length <= visibleKeyCount
-        ? keyLabels.join(' ')
-        : `${keyLabels.slice(0, visibleKeyCount).join(' ')} ... (+${keyLabels.length - visibleKeyCount})`;
-      const highlight = getTaskHighlightRange(completedTask);
+        ? formatKeysForDisplay(keyLabels)
+        : `${formatKeysForDisplay(keyLabels.slice(0, visibleKeyCount))} ... (+${keyLabels.length - visibleKeyCount})`;
+      const taskRecommendation = {
+        sequence: completedTask.recommendedSequence,
+        weight: completedTask.recommendedWeight,
+      };
+      const hasOptimal =
+        Array.isArray(taskRecommendation.sequence) &&
+        typeof taskRecommendation.weight === 'number';
+      let optimalSequence: string | undefined;
+      let ourSolutionKeyCount: number | undefined;
+      if (hasOptimal) {
+        const optimalKeys = taskRecommendation.sequence as string[];
+        const expandedOptimalKeys = expandRecommendedSequence(optimalKeys);
+        const displayOptimalKeys = expandedOptimalKeys.map((key) => (key === ' ' ? 'Space' : key));
+        optimalSequence = formatKeysForDisplay(displayOptimalKeys);
+        ourSolutionKeyCount = expandedOptimalKeys.length;
+      }
 
       setTaskSummaries((prev) => [
         ...prev,
@@ -1096,14 +1112,22 @@ const PracticeEditor: React.FC = () => {
           taskIndex: taskProgressRef.current + 1,
           taskId: completedTask.id,
           taskType: completedTask.type,
+          task: completedTask,
           durationMs: Math.max(0, completedAt - startedAt),
           keyCount: eventsSnapshot.length,
           keySequence,
-          codePreview: completedTask.codeSnippet,
-          highlightFrom: highlight.from,
-          highlightTo: highlight.to,
+          optimalSequence,
+          ourSolutionKeyCount,
         },
       ]);
+      setSummaryTaskCompletion((prev) => ({
+        ...prev,
+        [completedTask.id]: false,
+      }));
+      setSummaryTaskResetTokens((prev) => ({
+        ...prev,
+        [completedTask.id]: 0,
+      }));
 
       void submitTaskKeystrokes(completedTask, {
         startedAt,
@@ -1122,7 +1146,13 @@ const PracticeEditor: React.FC = () => {
       });
       view.contentDOM.blur();
     }
-  }, [formatKeyLabel, getTaskHighlightRange, submitTaskKeystrokes]);
+  }, [
+    expandRecommendedSequence,
+    formatKeysForDisplay,
+    formatKeyLabel,
+    normalizeUserKeysForComparison,
+    submitTaskKeystrokes,
+  ]);
 
   // Listen for Enter key to advance when task is complete
   useEffect(() => {
@@ -1210,18 +1240,27 @@ const PracticeEditor: React.FC = () => {
 
     let totalDurationMs = 0;
     let totalKeys = 0;
-    let totalApm = 0;
+    let totalKeysPerSecond = 0;
+    let totalDiscrepancy = 0;
+    let discrepancyCount = 0;
 
     for (const summary of taskSummaries) {
       totalDurationMs += summary.durationMs;
       totalKeys += summary.keyCount;
-      totalApm += summary.durationMs > 0 ? summary.keyCount / (summary.durationMs / 60000) : 0;
+      totalKeysPerSecond += summary.durationMs > 0 ? summary.keyCount / (summary.durationMs / 1000) : 0;
+      if (typeof summary.ourSolutionKeyCount === 'number') {
+        // +x means user's solution is x keys shorter than ours.
+        totalDiscrepancy += summary.ourSolutionKeyCount - summary.keyCount;
+        discrepancyCount += 1;
+      }
     }
 
     return {
-      apm: Math.round(totalApm / count),
+      keysPerSecond: totalKeysPerSecond / count,
       durationMs: Math.round(totalDurationMs / count),
       keys: Math.round(totalKeys / count),
+      discrepancy:
+        discrepancyCount > 0 ? totalDiscrepancy / discrepancyCount : null,
     };
   }, [taskSummaries]);
 
@@ -1290,18 +1329,26 @@ const PracticeEditor: React.FC = () => {
             <div style={styles.summaryOverview}>
               <div style={styles.summaryOverviewLabelRow}>
                 <span style={styles.summaryOverviewLabel}>Total Time</span>
-                <span style={styles.summaryOverviewLabel}>Avg APM</span>
+                <span style={styles.summaryOverviewLabel}>Avg Keys/s</span>
                 <span style={styles.summaryOverviewLabel}>Avg Duration</span>
                 <span style={styles.summaryOverviewLabel}>Avg Keys</span>
+                <span style={styles.summaryOverviewLabel}>Avg Discrepancy</span>
               </div>
               <div style={styles.summaryOverviewValueRow}>
-                <span style={{ ...styles.summaryOverviewValue, color: colors.primaryLight }}>{formatTime(finalTime)}</span>
-                <span style={{ ...styles.summaryOverviewValue, color: colors.primaryLight }}>{summaryAverages?.apm ?? '--'}</span>
-                <span style={{ ...styles.summaryOverviewValue, color: colors.secondaryLight }}>
+                <span style={{ ...styles.summaryOverviewValue, color: '#ffffff' }}>{formatTime(finalTime)}</span>
+                <span style={{ ...styles.summaryOverviewValue, color: '#ffffff' }}>
+                  {summaryAverages ? summaryAverages.keysPerSecond.toFixed(2) : '--'}
+                </span>
+                <span style={{ ...styles.summaryOverviewValue, color: '#ffffff' }}>
                   {summaryAverages ? formatTime(summaryAverages.durationMs) : '--'}
                 </span>
-                <span style={{ ...styles.summaryOverviewValue, color: colors.warning }}>
+                <span style={{ ...styles.summaryOverviewValue, color: '#ffffff' }}>
                   {summaryAverages?.keys ?? '--'}
+                </span>
+                <span style={{ ...styles.summaryOverviewValue, color: '#ffffff' }}>
+                  {summaryAverages && summaryAverages.discrepancy !== null
+                    ? `${summaryAverages.discrepancy >= 0 ? '+' : ''}${summaryAverages.discrepancy.toFixed(1)}`
+                    : '--'}
                 </span>
               </div>
             </div>
@@ -1310,7 +1357,7 @@ const PracticeEditor: React.FC = () => {
                 Restart Same Tasks
               </button>
               <button style={styles.homeButton} onClick={fetchPracticeSession}>
-                New Tasks
+                Restart
               </button>
               <button style={styles.homeButton} onClick={() => navigate('/')}>
                 Home
@@ -1320,49 +1367,130 @@ const PracticeEditor: React.FC = () => {
               {taskSummaries.length === 0 && (
                 <div style={{ ...styles.summaryEmpty, gridColumn: '1 / -1' }}>No task details recorded for this run.</div>
               )}
-              {taskSummaries.map((summary) => {
+              {taskSummaries.map((summary, index) => {
                 const keysPerSecond = summary.durationMs > 0
                   ? (summary.keyCount / (summary.durationMs / 1000)).toFixed(2)
                   : '0.00';
                 const isDeleteTask = summary.taskType === 'delete';
+                const hasComparison = typeof summary.ourSolutionKeyCount === 'number';
+                const userKeyCount = summary.keyCount;
+                const ourKeyCount = summary.ourSolutionKeyCount ?? 0;
+                const discrepancy = hasComparison ? ourKeyCount - userKeyCount : 0;
+                const positiveDiscrepancy = hasComparison && discrepancy > 0;
+                const negativeDiscrepancy = hasComparison && discrepancy < 0;
+                const comparisonStyle: React.CSSProperties = hasComparison
+                  ? positiveDiscrepancy
+                    ? {
+                        ...styles.summaryComparisonBox,
+                        border: '1px solid #22c55e60',
+                        background: '#22c55e20',
+                      }
+                    : negativeDiscrepancy
+                      ? {
+                          ...styles.summaryComparisonBox,
+                          border: '1px solid #ef444460',
+                          background: '#ef444420',
+                        }
+                      : {
+                          ...styles.summaryComparisonBox,
+                          border: `1px solid ${colors.textMuted}60`,
+                          background: `${colors.textMuted}20`,
+                        }
+                  : {
+                      ...styles.summaryComparisonBox,
+                      border: `1px solid ${colors.textMuted}60`,
+                      background: `${colors.textMuted}20`,
+                    };
                 const badgeStyle: React.CSSProperties = {
                   ...styles.summaryTaskBadge,
                   border: `1px solid ${isDeleteTask ? colors.secondary : colors.primary}40`,
                   background: `${isDeleteTask ? colors.secondary : colors.primary}20`,
                   color: isDeleteTask ? colors.secondaryLight : colors.primaryLight,
                 };
+                const isSummaryTaskComplete = summaryTaskCompletion[summary.taskId] === true;
                 return (
-                  <div key={summary.taskId} style={styles.summaryItem}>
+                  <div
+                    key={summary.taskId}
+                    style={isSummaryTaskComplete ? { ...styles.summaryItem, ...styles.summaryItemComplete } : styles.summaryItem}
+                  >
+                    {isSummaryTaskComplete && <div style={styles.summaryCompleteCheck}>✓</div>}
                     <div style={styles.summaryItemHeader}>
                       <span style={styles.summaryItemTitle}>Task {summary.taskIndex}</span>
                       <span style={badgeStyle}>{formatTaskTypeLabel(summary.taskType)}</span>
                     </div>
-                    <div style={styles.summaryMetaRow}>
-                      <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardApm }}>
-                        <span style={styles.summaryMetaLabel}>Keys/s</span>
-                        <span style={styles.summaryMetaValue}>{keysPerSecond}</span>
+                    <div style={styles.summaryItemBody}>
+                      <div style={styles.summaryAnalyticsColumn}>
+                        <div style={styles.summaryMetaRow}>
+                          <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardApm }}>
+                            <span style={styles.summaryMetaLabel}>Keys/s</span>
+                            <span style={styles.summaryMetaValue}>{keysPerSecond}</span>
+                          </div>
+                          <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardDuration }}>
+                            <span style={styles.summaryMetaLabel}>Duration</span>
+                            <span style={styles.summaryMetaValue}>{formatTime(summary.durationMs)}</span>
+                          </div>
+                          <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardKeys }}>
+                            <span style={styles.summaryMetaLabel}>Keys</span>
+                            <span style={styles.summaryMetaValue}>{summary.keyCount}</span>
+                          </div>
+                        </div>
+                        <div style={styles.summaryKeys}>
+                          <div style={styles.summaryKeysLabel}>Your Solution</div>
+                          <div style={styles.summaryKeysValue}>{summary.keySequence || 'No key events recorded'}</div>
+                        </div>
+                        {typeof summary.ourSolutionKeyCount === 'number' && (
+                          <div style={styles.summaryKeys}>
+                            <div style={styles.summaryKeysLabel}>Our Solution</div>
+                            <div style={styles.summaryKeysValue}>
+                              {summary.optimalSequence
+                                ? summary.optimalSequence
+                                : 'No recommendation'}
+                            </div>
+                          </div>
+                        )}
+                        {typeof summary.ourSolutionKeyCount === 'number' && (
+                          <div style={comparisonStyle}>
+                            <div style={styles.summaryComparisonLabel}>Discrepancy</div>
+                            <div style={styles.summaryComparisonValue}>
+                              {hasComparison
+                                ? `${discrepancy >= 0 ? '+' : ''}${discrepancy}`
+                                : 'Comparison unavailable'}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardDuration }}>
-                        <span style={styles.summaryMetaLabel}>Duration</span>
-                        <span style={styles.summaryMetaValue}>{formatTime(summary.durationMs)}</span>
+                      <div style={styles.summaryVerticalDivider} />
+                      <div style={styles.summarySnippetColumn}>
+                        <div style={styles.summaryCodeBox}>
+                          <SummaryTaskSandbox
+                            task={summary.task}
+                            resetToken={summaryTaskResetTokens[summary.taskId] ?? 0}
+                            autoFocusOnMount={index === 0}
+                            onCompletionChange={(isComplete) => {
+                              setSummaryTaskCompletion((prev) => ({
+                                ...prev,
+                                [summary.taskId]: isComplete,
+                              }));
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          style={styles.summaryResetButton}
+                          onClick={() => {
+                            setSummaryTaskCompletion((prev) => ({
+                              ...prev,
+                              [summary.taskId]: false,
+                            }));
+                            setSummaryTaskResetTokens((prev) => ({
+                              ...prev,
+                              [summary.taskId]: (prev[summary.taskId] ?? 0) + 1,
+                            }));
+                          }}
+                        >
+                          Reset Task
+                        </button>
                       </div>
-                      <div style={{ ...styles.summaryMetaCard, ...styles.summaryMetaCardKeys }}>
-                        <span style={styles.summaryMetaLabel}>Keys</span>
-                        <span style={styles.summaryMetaValue}>{summary.keyCount}</span>
-                      </div>
-                    </div>
-                    <div style={styles.summaryKeys}>
-                      <div style={styles.summaryKeysLabel}>Key Sequence</div>
-                      <div style={styles.summaryKeysValue}>{summary.keySequence || 'No key events recorded'}</div>
-                    </div>
-                    <div style={styles.summaryCodeLabel}>Snippet</div>
-                    <div style={styles.summaryCodeBox}>
-                      <SummarySnippetEditor
-                        code={summary.codePreview}
-                        taskType={summary.taskType}
-                        highlightFrom={summary.highlightFrom}
-                        highlightTo={summary.highlightTo}
-                      />
                     </div>
                   </div>
                 );

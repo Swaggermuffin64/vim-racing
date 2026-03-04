@@ -1,6 +1,5 @@
-import type { codeSnippet } from "../types.js";
+import type { codeSnippet, DeleteStrategy } from "../types.js";
 import { getLineFromOffset, resolveKeyOffset, multiKeyResolve, findMaxFactor} from "./graphInfra.js";
-import { CODE_SNIPPIT_OBJECTS } from "../codeSnippets.js";
 // one way edge
 interface vimEdge {
     weight: number,
@@ -22,7 +21,8 @@ interface dijkstraNodeInfo {
 type vimGraph = Record<number, offsetNode>;
 
 function isCountToken(token: string): boolean {
-    return /^\d+$/.test(token);
+    // In Vim, numeric counts are positive integers (1+). '0' is a motion.
+    return /^[1-9]\d*$/.test(token);
 }
 
 function getLastMotionToken(sequence: string[]): string | undefined {
@@ -52,6 +52,11 @@ function hasTargetedFindMotion(sequence: string[]): boolean {
 }
 
 function shouldPreferCandidateOnTie(candidateSequence: string[], currentSequence: string[]): boolean {
+    // Primary tie-breaker: fewer tokens in the sequence.
+    if (candidateSequence.length !== currentSequence.length) {
+        return candidateSequence.length < currentSequence.length;
+    }
+
     const candidateHasTargetedFind = hasTargetedFindMotion(candidateSequence);
     const currentHasTargetedFind = hasTargetedFindMotion(currentSequence);
     // Prefer simpler motions (no f/F/t/T) when path lengths tie.
@@ -64,7 +69,7 @@ function shouldPreferCandidateOnTie(candidateSequence: string[], currentSequence
 }
 
 function getMotionKeysForOffset(offset: number, codeSnippet: codeSnippet): string[] {
-    const baseKeys = ['h', 'j', 'k', 'l', 'w', 'b'];
+    const baseKeys = ['h', 'j', 'k', 'l', 'w', 'e', 'b', '0', '$'];
     const lineNumber = getLineFromOffset(offset, codeSnippet);
     const lineRange = codeSnippet.lineOffsetRanges[lineNumber];
     if (!lineRange) return baseKeys;
@@ -383,19 +388,415 @@ export function shortestVimSequenceLazy(
 
     return [-1, []];
 }
-const exampleCodeSnippet = CODE_SNIPPIT_OBJECTS[0]; 
-if (exampleCodeSnippet) {
-    const graph = buildSnippetGraph(exampleCodeSnippet);
-    const startNode = graph[0];
-//    if (startNode) {
-//        console.log(
-//            startNode.connections.map(({ weight, otherNode, keySequence }) => ({
-//              weight,
-//              otherOffset: otherNode.offset,
-//              keySequence,
-//            }))
-//        );
-//    }
-    const [w, s] = shortestVimSequenceLazy(exampleCodeSnippet, 76, 0);
-    console.log(w,s);
+
+interface deletePlanCandidate {
+    sequence: string[];
+    weight: number;
+}
+
+export interface deleteRecommendation {
+    recommendedSequence: string[];
+    recommendedWeight: number;
+}
+
+interface shortestPathCacheEntry {
+    weight: number;
+    sequence: string[];
+}
+
+const SHORTEST_PATH_CACHE_MAX_ENTRIES = 10000;
+const shortestPathCache = new Map<string, shortestPathCacheEntry>();
+
+function getSnippetCacheId(codeSnippet: codeSnippet): string {
+    // Stable enough for generated snippets; combine length and start sample to reduce collisions.
+    const sample = codeSnippet.code.slice(0, 64);
+    return `${codeSnippet.code.length}:${sample}`;
+}
+
+function buildShortestPathCacheKey(
+    codeSnippet: codeSnippet,
+    startOffset: number,
+    startPreferredX: number,
+    targetOffset: number
+): string {
+    return `${getSnippetCacheId(codeSnippet)}|${startOffset}|${startPreferredX}|${targetOffset}`;
+}
+
+function setCachedShortestPathResult(key: string, value: shortestPathCacheEntry): void {
+    if (shortestPathCache.has(key)) {
+        shortestPathCache.delete(key);
+    }
+    shortestPathCache.set(key, value);
+    if (shortestPathCache.size > SHORTEST_PATH_CACHE_MAX_ENTRIES) {
+        const oldestKey = shortestPathCache.keys().next().value;
+        if (oldestKey) {
+            shortestPathCache.delete(oldestKey);
+        }
+    }
+}
+
+function getShortestVimSequenceLazyMemoized(
+    codeSnippet: codeSnippet,
+    startingOffset: number,
+    targetOffset: number,
+    startingPreferredX: number
+): [totalWeight: number, keySequence: string[]] {
+    const key = buildShortestPathCacheKey(
+        codeSnippet,
+        startingOffset,
+        startingPreferredX,
+        targetOffset
+    );
+    const cached = shortestPathCache.get(key);
+    if (cached) {
+        return [cached.weight, [...cached.sequence]];
+    }
+
+    const [weight, sequence] = shortestVimSequenceLazy(
+        codeSnippet,
+        startingOffset,
+        targetOffset,
+        startingPreferredX
+    );
+    setCachedShortestPathResult(key, { weight, sequence: [...sequence] });
+    return [weight, sequence];
+}
+
+function getOffsetColumn(codeSnippet: codeSnippet, offset: number): number {
+    const line = getLineFromOffset(offset, codeSnippet);
+    const lineRange = line >= 0 ? codeSnippet.lineOffsetRanges[line] : undefined;
+    if (!lineRange) return 0;
+    return offset - lineRange[0];
+}
+
+function expandSequenceToKeystrokeCount(sequence: string[]): number {
+    return sequence.reduce((sum, token) => sum + token.length, 0);
+}
+
+function replaySequenceEndState(
+    codeSnippet: codeSnippet,
+    initialOffset: number,
+    initialPreferredX: number,
+    sequence: string[]
+): vimCursorState {
+    let offset = initialOffset;
+    let preferredX = initialPreferredX;
+    let pendingCount: number | null = null;
+
+    for (const token of sequence) {
+        if (isCountToken(token)) {
+            pendingCount = Number(token);
+            continue;
+        }
+        const repeatCount = pendingCount ?? 1;
+        pendingCount = null;
+        for (let i = 0; i < repeatCount; i++) {
+            [offset, preferredX] = resolveKeyOffset(offset, token, codeSnippet, preferredX);
+        }
+    }
+    return { offset, preferredX };
+}
+
+function getBestCandidate(candidates: deletePlanCandidate[]): deletePlanCandidate | null {
+    if (candidates.length === 0) return null;
+    let best = candidates[0]!;
+    for (let i = 1; i < candidates.length; i++) {
+        const candidate = candidates[i]!;
+        if (candidate.weight < best.weight) {
+            best = candidate;
+        }
+    }
+    return best;
+}
+
+function buildSingleAnchorDeletePlan(
+    codeSnippet: codeSnippet,
+    startingOffset: number,
+    startingPreferredX: number,
+    anchorOffset: number,
+    actionKeys: string[]
+): deletePlanCandidate | null {
+    const [navWeight, navSequence] = getShortestVimSequenceLazyMemoized(
+        codeSnippet,
+        startingOffset,
+        anchorOffset,
+        startingPreferredX
+    );
+    if (navWeight < 0) return null;
+    return {
+        sequence: [...navSequence, ...actionKeys],
+        weight: navWeight + expandSequenceToKeystrokeCount(actionKeys),
+    };
+}
+
+function buildVisualDeletePlan(
+    codeSnippet: codeSnippet,
+    startingOffset: number,
+    startingPreferredX: number,
+    firstAnchor: number,
+    secondAnchor: number
+): deletePlanCandidate | null {
+    const [firstNavWeight, firstNavSequence] = getShortestVimSequenceLazyMemoized(
+        codeSnippet,
+        startingOffset,
+        firstAnchor,
+        startingPreferredX
+    );
+    if (firstNavWeight < 0) return null;
+
+    const firstEndState = replaySequenceEndState(
+        codeSnippet,
+        startingOffset,
+        startingPreferredX,
+        firstNavSequence
+    );
+
+    const [secondNavWeight, secondNavSequence] = getShortestVimSequenceLazyMemoized(
+        codeSnippet,
+        firstEndState.offset,
+        secondAnchor,
+        firstEndState.preferredX
+    );
+    if (secondNavWeight < 0) return null;
+
+    return {
+        sequence: [...firstNavSequence, 'v', ...secondNavSequence, 'd'],
+        weight: firstNavWeight + 1 + secondNavWeight + 1,
+    };
+}
+
+function getDeleteRangeForCountedE(
+    codeSnippet: codeSnippet,
+    offset: number,
+    count: number
+): [number, number] | null {
+    if (count < 1 || codeSnippet.wordIndices.length === 0) return null;
+    const startLineNumber = getLineFromOffset(offset, codeSnippet);
+    const startLineRange = startLineNumber >= 0 ? codeSnippet.lineOffsetRanges[startLineNumber] : undefined;
+    if (!startLineRange) return null;
+
+    let currOffset = offset;
+    let currPreferredX = currOffset - startLineRange[0];
+
+    for (let i = 0; i < count; i++) {
+        const [nextOffset, nextPreferredX] = resolveKeyOffset(currOffset, 'e', codeSnippet, currPreferredX);
+        if (nextOffset === currOffset) {
+            // No further e-motion available from this position.
+            return null;
+        }
+        currOffset = nextOffset;
+        currPreferredX = nextPreferredX;
+    }
+
+    // d{count}e deletes through the target character (inclusive).
+    return [offset, Math.min(codeSnippet.code.length, currOffset + 1)];
+}
+
+function getMatchingCountedEMotions(
+    codeSnippet: codeSnippet,
+    from: number,
+    to: number
+): number[] {
+    const matches: number[] = [];
+    for (let count = 1; count <= codeSnippet.wordIndices.length; count++) {
+        const simulatedRange = getDeleteRangeForCountedE(codeSnippet, from, count);
+        if (!simulatedRange) continue;
+        const [simulatedFrom, simulatedTo] = simulatedRange;
+        if (simulatedFrom === from && simulatedTo === to) {
+            matches.push(count);
+        }
+    }
+    return matches;
+}
+
+function uniqueValidOffsets(offsets: number[], codeLength: number): number[] {
+    const unique = new Set<number>();
+    for (const offset of offsets) {
+        if (offset >= 0 && offset < codeLength) unique.add(offset);
+    }
+    return [...unique];
+}
+
+function getInnerPairsForStrategy(codeSnippet: codeSnippet, strategy: DeleteStrategy): codeSnippet["curlyBraceIndices"] {
+    if (strategy === 'INNER_CURLY_BRACE') return codeSnippet.curlyBraceIndices;
+    if (strategy === 'INNER_PARENTHESIS') return codeSnippet.parenthesisIndices;
+    return codeSnippet.bracketIndices;
+}
+
+function getInnermostContainingPair(
+    pairs: codeSnippet["curlyBraceIndices"],
+    offset: number
+): [number, number] | null {
+    let bestPair: [number, number] | null = null;
+    let bestSpan = Number.MAX_SAFE_INTEGER;
+    for (const pair of pairs) {
+        const [openOffset, closeOffsetExclusive] = pair;
+        if (offset < openOffset || offset >= closeOffsetExclusive) continue;
+        const span = closeOffsetExclusive - openOffset;
+        if (span < bestSpan) {
+            bestSpan = span;
+            bestPair = pair;
+        }
+    }
+    return bestPair;
+}
+
+function getNextPairInFile(
+    pairs: codeSnippet["curlyBraceIndices"],
+    offset: number
+): [number, number] | null {
+    let nextPair: [number, number] | null = null;
+    for (const pair of pairs) {
+        const [openOffset] = pair;
+        if (openOffset < offset) continue;
+        if (!nextPair || openOffset < nextPair[0]) {
+            nextPair = pair;
+        }
+    }
+    return nextPair;
+}
+
+function getValidInnerTextObjectAnchors(
+    codeSnippet: codeSnippet,
+    strategy: DeleteStrategy,
+    from: number,
+    to: number
+): number[] {
+    const pairs = getInnerPairsForStrategy(codeSnippet, strategy);
+    const targetOpen = from - 1;
+    const targetCloseExclusive = to + 1;
+
+    const targetExists = pairs.some(([openOffset, closeOffsetExclusive]) => {
+        return openOffset === targetOpen && closeOffsetExclusive === targetCloseExclusive;
+    });
+    if (!targetExists) {
+        return uniqueValidOffsets([from, Math.max(from, to - 1), from - 1, to], codeSnippet.code.length);
+    }
+
+    const validAnchors: number[] = [];
+    for (let anchorOffset = 0; anchorOffset < codeSnippet.code.length; anchorOffset++) {
+        // Vim-like text object resolution:
+        // - If cursor is inside a pair, operate on that current (innermost) pair.
+        // - Otherwise, operate on the next pair in file order.
+        const containingPair = getInnermostContainingPair(pairs, anchorOffset);
+        const effectivePair = containingPair ?? getNextPairInFile(pairs, anchorOffset);
+        if (!effectivePair) continue;
+
+        const [openOffset, closeOffsetExclusive] = effectivePair;
+        const innerFrom = openOffset + 1;
+        const innerTo = closeOffsetExclusive - 1;
+        if (innerFrom === from && innerTo === to) {
+            validAnchors.push(anchorOffset);
+        }
+    }
+
+    return uniqueValidOffsets(
+        [
+            ...validAnchors,
+            from,
+            Math.max(from, to - 1),
+            from - 1,
+            to,
+        ],
+        codeSnippet.code.length
+    );
+}
+
+export function getRecommendedDeleteSequence(
+    codeSnippet: codeSnippet,
+    strategy: DeleteStrategy,
+    from: number,
+    to: number,
+    startingOffset = 0
+): deleteRecommendation | null {
+    const startingPreferredX = getOffsetColumn(codeSnippet, startingOffset);
+    const inclusiveEnd = Math.max(from, to - 1);
+    const candidates: deletePlanCandidate[] = [];
+
+    if (strategy === 'WORD') {
+        // Single-character target ranges are reliably handled by x.
+        if (to === from + 1) {
+            const xCandidate = buildSingleAnchorDeletePlan(
+                codeSnippet,
+                startingOffset,
+                startingPreferredX,
+                from,
+                ['x']
+            );
+            if (xCandidate) candidates.push(xCandidate);
+        }
+
+        const matchingCounts = getMatchingCountedEMotions(
+            codeSnippet,
+            from,
+            to
+        );
+        for (const count of matchingCounts) {
+            const actionKeys = count === 1 ? ['d', 'e'] : ['d', String(count), 'e'];
+            const candidate = buildSingleAnchorDeletePlan(
+                codeSnippet,
+                startingOffset,
+                startingPreferredX,
+                from,
+                actionKeys
+            );
+            if (candidate) candidates.push(candidate);
+        }
+    }
+
+    if (strategy === 'CURLY_BRACE' || strategy === 'PARENTHESIS' || strategy === 'BRACKET') {
+        const anchors = uniqueValidOffsets([from, inclusiveEnd], codeSnippet.code.length);
+        for (const anchor of anchors) {
+            const candidate = buildSingleAnchorDeletePlan(
+                codeSnippet,
+                startingOffset,
+                startingPreferredX,
+                anchor,
+                ['d', '%']
+            );
+            if (candidate) candidates.push(candidate);
+        }
+    }
+
+    if (strategy === 'INNER_CURLY_BRACE' || strategy === 'INNER_PARENTHESIS' || strategy === 'INNER_BRACKET') {
+        const textObjectChar = strategy === 'INNER_CURLY_BRACE' ? '{' : strategy === 'INNER_PARENTHESIS' ? '(' : '[';
+        const anchors = getValidInnerTextObjectAnchors(codeSnippet, strategy, from, to);
+        for (const anchor of anchors) {
+            const candidate = buildSingleAnchorDeletePlan(
+                codeSnippet,
+                startingOffset,
+                startingPreferredX,
+                anchor,
+                ['d', 'i', textObjectChar]
+            );
+            if (candidate) candidates.push(candidate);
+        }
+    }
+
+    if (strategy === 'RANDOM') {
+        const aToB = buildVisualDeletePlan(
+            codeSnippet,
+            startingOffset,
+            startingPreferredX,
+            from,
+            inclusiveEnd
+        );
+        if (aToB) candidates.push(aToB);
+
+        const bToA = buildVisualDeletePlan(
+            codeSnippet,
+            startingOffset,
+            startingPreferredX,
+            inclusiveEnd,
+            from
+        );
+        if (bToA) candidates.push(bToA);
+    }
+
+    const best = getBestCandidate(candidates);
+    if (!best) return null;
+    return {
+        recommendedSequence: best.sequence,
+        recommendedWeight: best.weight,
+    };
 }
