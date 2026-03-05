@@ -236,6 +236,24 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: '"JetBrains Mono", monospace',
     marginBottom: '8px',
   },
+  keycap: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '28px',
+    height: '24px',
+    padding: '0 8px',
+    margin: '0 4px',
+    borderRadius: '6px',
+    border: `1px solid ${colors.border}`,
+    background: `${colors.bgCard}cc`,
+    color: colors.textPrimary,
+    fontSize: '12px',
+    fontWeight: 700,
+    lineHeight: 1,
+    boxShadow: 'inset 0 -1px 0 rgba(255,255,255,0.08)',
+    verticalAlign: 'middle',
+  },
   completeTime: {
     fontSize: '48px',
     fontWeight: 700,
@@ -261,6 +279,18 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
     boxShadow: `0 0 20px ${colors.success}60`,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    gap: '4px',
+    minWidth: '170px',
+  },
+  completeButtonHint: {
+    fontSize: '12px',
+    fontWeight: 600,
+    color: `${colors.bgDark}cc`,
+    display: 'inline-flex',
+    alignItems: 'center',
   },
   homeButton: {
     padding: '14px 32px',
@@ -585,19 +615,30 @@ const PracticeEditor: React.FC = () => {
     }
   }, []);
 
-  // Listen for Enter key to advance when task is complete
+  // Listen for Enter key:
+  // - when session is complete: restart
+  // - when task is complete: advance to next task
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTaskComplete && e.key === 'Enter') {
+      if (e.key !== 'Enter') return;
+
+      if (isSessionComplete) {
         e.preventDefault();
         e.stopPropagation();
-        advanceToNextTask();
+        void fetchPracticeSession();
+        return;
       }
+
+      if (!isTaskComplete) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      advanceToNextTask();
     };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isTaskComplete, advanceToNextTask]);
+  }, [isSessionComplete, isTaskComplete, advanceToNextTask, fetchPracticeSession]);
 
   // Toggle relative line numbers
   const toggleRelativeLineNumbers = useCallback(() => {
@@ -731,7 +772,10 @@ const PracticeEditor: React.FC = () => {
             <div style={styles.completeTime}>{formatTime(finalTime)}</div>
             <div style={styles.completeButtons}>
               <button style={styles.completeButton} onClick={fetchPracticeSession}>
-                Restart
+                <span>Play Again</span>
+                <span style={styles.completeButtonHint}>
+                  Press <span style={styles.keycap}>↵</span>
+                </span>
               </button>
               <button style={styles.homeButton} onClick={() => navigate('/')}>
                 Home
@@ -766,7 +810,7 @@ const PracticeEditor: React.FC = () => {
               )}
               {isTaskComplete && (
                 <div style={styles.nextTaskHint}>
-                  Press Enter for next task
+                  Press <span style={styles.keycap}>↵</span> for next task
                 </div>
               )}
             </div>
