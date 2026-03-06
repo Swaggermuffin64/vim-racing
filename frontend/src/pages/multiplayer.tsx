@@ -15,6 +15,8 @@ import { setDeleteMode, setAllowedDeleteRange, allowReset, setUndoBarrier } from
 import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const KEY_LOG_KEYS_PER_LINE = 10;
+const KEY_LOG_MAX_LINES = 2;
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -177,6 +179,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px',
     minWidth: '250px',
   },
+  rightColumn: {
+    minWidth: '250px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '14px',
+  },
   scoreboardTitle: {
     fontSize: '14px',
     fontWeight: 700,
@@ -196,6 +204,51 @@ const styles: Record<string, React.CSSProperties> = {
     color: colors.textSecondary,
     fontSize: '14px',
     fontFamily: '"JetBrains Mono", monospace',
+  },
+  keyLogContainer: {
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '12px',
+    padding: '14px',
+  },
+  keyLogTitle: {
+    fontSize: '12px',
+    color: colors.textMuted,
+    fontFamily: '"JetBrains Mono", monospace',
+    letterSpacing: '0.8px',
+    textTransform: 'uppercase' as const,
+    marginBottom: '10px',
+  },
+  keyLogBox: {
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box' as const,
+    minHeight: '84px',
+    maxHeight: '84px',
+    overflowY: 'hidden' as const,
+    overflowX: 'hidden' as const,
+    whiteSpace: 'pre-line' as const,
+    wordBreak: 'break-word' as const,
+    overflowWrap: 'anywhere' as const,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '8px',
+    background: colors.bgCard,
+    padding: '8px',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#ffffff',
+    lineHeight: 1.4,
+  },
+  keyLogBoxEmpty: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center' as const,
+  },
+  keyLogEmpty: {
+    color: colors.textMuted,
+    fontSize: '14px',
   },
 };
 
@@ -224,6 +277,7 @@ const MultiplayerGame: React.FC = () => {
   const timerRef = useRef<number>(0);
   const [elapsedTime, setElapsedTime] = React.useState(0);
   const [editorReadyTick, setEditorReadyTick] = React.useState(0);
+  const [recentKeys, setRecentKeys] = React.useState<string[]>([]);
 
   // Stable refs for callbacks used in CodeMirror extensions
   const sendCursorMoveRef = useRef(sendCursorMove);
@@ -232,6 +286,20 @@ const MultiplayerGame: React.FC = () => {
   useEffect(() => { sendEditorTextRef.current = sendEditorText; }, [sendEditorText]);
 
   const me = gameState.players.find(p => p.id === gameState.myPlayerId);
+
+  const formatKeyLabel = useCallback((key: string): string | null => {
+    if (key === ' ') return 'Space';
+    if (key === 'Escape') return 'Esc';
+    if (key === 'ArrowLeft') return 'Left';
+    if (key === 'ArrowRight') return 'Right';
+    if (key === 'ArrowUp') return 'Up';
+    if (key === 'ArrowDown') return 'Down';
+    if (key === 'Control') return 'Ctrl';
+    if (key === 'Meta') return null;
+    if (key === 'Alt') return 'Alt';
+    if (key === 'Shift') return 'Shift';
+    return key;
+  }, []);
 
   // Handle cursor movement (uses ref to always get latest sendCursorMove)
   const handleCursorChange = useCallback((offset: number) => {
@@ -284,7 +352,11 @@ const MultiplayerGame: React.FC = () => {
       ...event,
       dtMs,
     });
-  }, [gameState.roomState, me?.isFinished]);
+    const keyLabel = formatKeyLabel(event.key);
+    if (keyLabel) {
+      setRecentKeys((prev) => [...prev, keyLabel].slice(-40));
+    }
+  }, [formatKeyLabel, gameState.roomState, me?.isFinished]);
 
   const resetCurrentTask = useCallback(() => {
     const view = editorRef.current?.view;
@@ -370,6 +442,7 @@ const MultiplayerGame: React.FC = () => {
       currentTaskIdRef.current = null;
       keystrokeTaskIdRef.current = null;
       taskKeystrokesRef.current = [];
+      setRecentKeys([]);
     }
     if (gameState.roomState === 'idle' || gameState.roomState === 'waiting') {
       submittedTaskIdsRef.current.clear();
@@ -386,6 +459,7 @@ const MultiplayerGame: React.FC = () => {
       keystrokeTaskTypeRef.current = gameState.task.type;
       keystrokeTaskStartedAtRef.current = Date.now();
       taskKeystrokesRef.current = [];
+      setRecentKeys([]);
       return;
     }
 
@@ -395,8 +469,20 @@ const MultiplayerGame: React.FC = () => {
       keystrokeTaskTypeRef.current = gameState.task.type;
       keystrokeTaskStartedAtRef.current = Date.now();
       taskKeystrokesRef.current = [];
+      setRecentKeys([]);
     }
   }, [gameState.roomState, gameState.task.id, gameState.task.type, submitTaskKeystrokes]);
+
+  const recentKeysDisplay = React.useMemo(() => {
+    if (recentKeys.length === 0) return '';
+    const visibleCount = KEY_LOG_KEYS_PER_LINE * KEY_LOG_MAX_LINES;
+    const visibleKeys = recentKeys.slice(-visibleCount);
+    const lines: string[] = [];
+    for (let i = 0; i < visibleKeys.length; i += KEY_LOG_KEYS_PER_LINE) {
+      lines.push(visibleKeys.slice(i, i + KEY_LOG_KEYS_PER_LINE).join(' '));
+    }
+    return lines.join('\n');
+  }, [recentKeys]);
 
   // Set up task highlights (initial + transitions)
   useEffect(() => {
@@ -599,39 +685,55 @@ const MultiplayerGame: React.FC = () => {
             )}
           </div>
 
-          {/* Scoreboard */}
-          <div style={styles.scoreboard}>
-            <div style={styles.scoreboardTitle}>Scoreboard</div>
-            {gameState.players.map(player => (
-              <div
-                key={player.id}
-                style={{
-                  ...styles.scoreboardPlayer,
-                  color: player.id === gameState.myPlayerId ? colors.primaryLight : colors.textSecondary,
-                }}
-              >
-                <span>
-                  {player.name}
-                  {player.leftRace && (
-                    <span style={{ color: colors.textMuted }}>
-                      {' '} (left)
-                    </span>
-                  )}
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: colors.textMuted }}>
-                    {player.leftRace && !player.isFinished
-                      ? 'DNF'
-                      : `${player.taskProgress ?? 0}/${gameState.num_tasks ? gameState.num_tasks : 1}`}
+          <div style={styles.rightColumn}>
+            {/* Scoreboard */}
+            <div style={styles.scoreboard}>
+              <div style={styles.scoreboardTitle}>Scoreboard</div>
+              {gameState.players.map(player => (
+                <div
+                  key={player.id}
+                  style={{
+                    ...styles.scoreboardPlayer,
+                    color: player.id === gameState.myPlayerId ? colors.primaryLight : colors.textSecondary,
+                  }}
+                >
+                  <span>
+                    {player.name}
+                    {player.leftRace && (
+                      <span style={{ color: colors.textMuted }}>
+                        {' '} (left)
+                      </span>
+                    )}
                   </span>
-                  {player.isFinished && (
-                    <span style={styles.finishedBadge}>
-                      {formatTime(player.finishTime || 0)}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: colors.textMuted }}>
+                      {player.leftRace && !player.isFinished
+                        ? 'DNF'
+                        : `${player.taskProgress ?? 0}/${gameState.num_tasks ? gameState.num_tasks : 1}`}
                     </span>
-                  )}
-                </span>
+                    {player.isFinished && (
+                      <span style={styles.finishedBadge}>
+                        {formatTime(player.finishTime || 0)}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div style={styles.keyLogContainer}>
+              <div style={styles.keyLogTitle}>Keys Pressed (Current Task)</div>
+              <div
+                style={
+                  recentKeys.length > 0
+                    ? styles.keyLogBox
+                    : { ...styles.keyLogBox, ...styles.keyLogBoxEmpty }
+                }
+              >
+                {recentKeys.length > 0
+                  ? recentKeysDisplay
+                  : <span style={styles.keyLogEmpty}>No keys yet...</span>}
               </div>
-            ))}
+            </div>
           </div>
         </div>
       </div>

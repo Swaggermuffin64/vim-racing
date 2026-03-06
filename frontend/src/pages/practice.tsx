@@ -12,6 +12,12 @@ import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../c
 import { SummaryTaskSandbox } from '../components/SummaryTaskSandbox';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const KEY_LOG_KEYS_PER_LINE = 10;
+const KEY_LOG_MAX_LINES = 2;
+const CHEATSHEET_DOCK_WIDTH = 'clamp(18rem, 22vw, 24rem)';
+const CHEATSHEET_CONTAINER_SHIFT = 'clamp(2.375rem, 3.25vw, 3.5rem)';
+const RACE_CONTAINER_LEFT_WITH_CHEATSHEET = `max(1.5rem, calc((100vw - 1200px) / 2 + ${CHEATSHEET_CONTAINER_SHIFT}))`;
+const CHEATSHEET_DOCK_LEFT = `max(0.75rem, calc((${RACE_CONTAINER_LEFT_WITH_CHEATSHEET} - ${CHEATSHEET_DOCK_WIDTH}) / 2))`;
 
 interface TaskSummary {
   taskIndex: number;
@@ -31,6 +37,32 @@ interface PracticeSessionResponse {
   startTime: number;
   practiceSummary?: PracticeSummary;
 }
+
+const VIM_CHEATSHEET: Array<{ title: string; items: Array<{ keys: string; description: string }> }> = [
+  {
+    title: 'Navigation',
+    items: [
+      { keys: 'h / j / k / l', description: 'Move left, down, up, right' },
+      { keys: 'w / b / e', description: 'Jump by word start/back/end' },
+      { keys: '0 / $', description: 'Go to line start/end' },
+      { keys: 'f<char> / t<char>', description: 'Find a char on this line' },
+      { keys: 'gg / G', description: 'Go to top / bottom of file' },
+      { keys: '<count><motion>', description: 'Repeat motion (ex: 3j, 2w)' },
+    ],
+  },
+  {
+    title: 'Deletion',
+    items: [
+      { keys: 'x', description: 'Delete character under cursor' },
+      { keys: 'dw / d<count>e', description: 'Delete word / multiple word-ends' },
+      { keys: 'd$', description: 'Delete to end of line' },
+      { keys: 'd%', description: 'Delete matching pair block' },
+      { keys: 'di( di{ di[', description: 'Delete inside (), {}, []' },
+      { keys: 'da( da{ da[', description: 'Delete around (), {}, []' },
+      { keys: 'v ... d', description: 'Visual select then delete range' },
+    ],
+  },
+];
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -86,6 +118,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px 28px',
     marginBottom: '24px',
     boxShadow: `0 0 30px ${colors.primaryGlow}, inset 0 1px 0 rgba(255,255,255,0.05)`,
+    position: 'relative' as const,
   },
   taskBannerComplete: {
     background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
@@ -94,12 +127,13 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '20px 28px',
     marginBottom: '24px',
     boxShadow: `0 0 30px ${colors.success}30, inset 0 1px 0 rgba(255,255,255,0.05)`,
+    position: 'relative' as const,
   },
   taskType: {
-    fontSize: '11px',
+    fontSize: '15px',
     fontWeight: 700,
     textTransform: 'uppercase' as const,
-    letterSpacing: '2px',
+    letterSpacing: '1.2px',
     color: colors.primaryLight,
     marginBottom: '10px',
     display: 'flex',
@@ -107,7 +141,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '8px',
   },
   taskDescription: {
-    fontSize: '18px',
+    fontSize: '24px',
     fontWeight: 500,
     color: colors.textPrimary,
     fontFamily: '"JetBrains Mono", monospace',
@@ -126,15 +160,6 @@ const styles: Record<string, React.CSSProperties> = {
   editorPanel: {
     flex: 1,
   },
-  editorLabel: {
-    fontSize: '14px',
-    fontWeight: 600,
-    color: colors.textSecondary,
-    marginBottom: '12px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-  },
   editorWrapper: {
     borderRadius: '12px',
     overflow: 'hidden',
@@ -146,9 +171,34 @@ const styles: Record<string, React.CSSProperties> = {
     border: `1px solid ${colors.border}`,
     borderRadius: '12px',
     padding: '20px',
+    marginTop: '0',
+    minWidth: 0,
   },
   sidebarColumn: {
-    minWidth: '280px',
+    flex: '0 0 320px',
+    width: '320px',
+    minWidth: 0,
+  },
+  leftCheatSheetDock: {
+    position: 'fixed' as const,
+    top: '140px',
+    left: CHEATSHEET_DOCK_LEFT,
+    width: CHEATSHEET_DOCK_WIDTH,
+    zIndex: 1,
+  },
+  leftCheatSheetPanel: {
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '12px',
+    padding: '16px',
+    maxHeight: 'calc(100vh - 170px)',
+    overflowY: 'auto' as const,
+  },
+  leftCheatSheetHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '10px',
   },
   sidebarControls: {
     marginTop: '12px',
@@ -156,10 +206,77 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column' as const,
     alignItems: 'flex-start',
   },
-  keyLogContainer: {
+  cheatSheetPanel: {
     marginTop: '16px',
-    borderTop: `1px solid ${colors.border}`,
-    paddingTop: '14px',
+    marginBottom: '28px',
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '12px',
+    padding: '16px',
+  },
+  cheatSheetTitle: {
+    fontSize: '13px',
+    fontWeight: 700,
+    color: colors.textPrimary,
+    marginBottom: '0',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '1px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  cheatSheetHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottom: `1px solid ${colors.border}`,
+    paddingBottom: '10px',
+    marginBottom: '12px',
+  },
+  cheatSheetToggle: {
+    height: '40px',
+    padding: '0 10px',
+    fontSize: '13px',
+    fontWeight: 700,
+    color: colors.textSecondary,
+    background: `${colors.border}22`,
+    border: `1px solid ${colors.borderLight}`,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.6px',
+  },
+  cheatSheetSectionTitle: {
+    fontSize: '12px',
+    fontWeight: 700,
+    color: colors.primaryLight,
+    marginTop: '10px',
+    marginBottom: '6px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.8px',
+    fontFamily: '"JetBrains Mono", monospace',
+  },
+  cheatSheetRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 140px) minmax(0, 1fr)',
+    gap: '8px',
+    alignItems: 'start',
+    padding: '4px 0',
+  },
+  cheatSheetKeys: {
+    color: '#ffffff',
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '12px',
+    fontWeight: 700,
+    letterSpacing: '0.2px',
+  },
+  cheatSheetDescription: {
+    color: colors.textSecondary,
+    fontFamily: '"JetBrains Mono", monospace',
+    fontSize: '12px',
+    lineHeight: 1.4,
+  },
+  keyLogContainer: {
+    marginTop: 0,
   },
   keyLogTitle: {
     fontSize: '12px',
@@ -170,20 +287,36 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '10px',
   },
   keyLogBox: {
-    minHeight: '64px',
-    maxHeight: '120px',
-    overflowY: 'auto' as const,
+    width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box' as const,
+    minHeight: '84px',
+    maxHeight: '84px',
+    overflowY: 'hidden' as const,
+    overflowX: 'hidden' as const,
+    whiteSpace: 'pre-line' as const,
+    wordBreak: 'break-word' as const,
+    overflowWrap: 'anywhere' as const,
     border: `1px solid ${colors.border}`,
     borderRadius: '8px',
     background: colors.bgCard,
     padding: '8px',
     fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '12px',
-    color: colors.textSecondary,
-    lineHeight: 1.5,
+    fontSize: '24px',
+    fontWeight: 700,
+    color: '#ffffff',
+    lineHeight: 1.4,
+  },
+  keyLogBoxEmpty: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center' as const,
   },
   keyLogEmpty: {
     color: colors.textMuted,
+    fontSize: '14px',
   },
   sidebarTitle: {
     fontSize: '14px',
@@ -221,22 +354,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   toggleButton: {
     width: '90%',
-    padding: '10px 16px',
+    height: '40px',
+    padding: '0 10px',
     fontSize: '13px',
-    fontWeight: 500,
-    color: colors.textPrimary,
-    background: `${colors.primary}20`,
-    border: `1px solid ${colors.primary}60`,
+    fontWeight: 700,
+    color: colors.textSecondary,
+    background: `${colors.border}22`,
+    border: `1px solid ${colors.borderLight}`,
     borderRadius: '8px',
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.6px',
     transition: 'all 0.2s ease',
     marginTop: '12px',
   },
   restartButton: {
     width: '90%',
-    padding: '10px 16px',
-    fontSize: '13px',
+    height: '40px',
+    padding: '0 16px',
+    fontSize: '14px',
     fontWeight: 500,
     color: colors.textPrimary,
     background: `${colors.primary}20`,
@@ -249,8 +386,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   restartSameButton: {
     width: '90%',
-    padding: '10px 16px',
-    fontSize: '13px',
+    height: '40px',
+    padding: '0 16px',
+    fontSize: '14px',
     fontWeight: 500,
     color: colors.secondaryLight,
     background: `${colors.secondary}12`,
@@ -272,7 +410,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontFamily: '"JetBrains Mono", monospace',
     transition: 'all 0.2s ease',
-    marginLeft: 'auto',
+    marginTop: '10px',
   },
   sessionComplete: {
     display: 'flex',
@@ -631,7 +769,19 @@ const styles: Record<string, React.CSSProperties> = {
   nextTaskHint: {
     fontSize: '14px',
     color: colors.successLight,
-    marginTop: '16px',
+    position: 'absolute' as const,
+    top: '20px',
+    right: '28px',
+    fontFamily: '"JetBrains Mono", monospace',
+    pointerEvents: 'none' as const,
+  },
+  taskProgressInlineRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '14px',
+    color: colors.textSecondary,
+    fontSize: '13px',
     fontFamily: '"JetBrains Mono", monospace',
   },
   // Ready screen styles
@@ -782,6 +932,7 @@ const PracticeEditor: React.FC = () => {
   const [taskSummaries, setTaskSummaries] = useState<TaskSummary[]>([]);
   const [summaryTaskCompletion, setSummaryTaskCompletion] = useState<Record<string, boolean>>({});
   const [summaryTaskResetTokens, setSummaryTaskResetTokens] = useState<Record<string, number>>({});
+  const [showCheatSheet, setShowCheatSheet] = useState(false);
 
   // Current task derived from state
   const currentTask = tasks[taskProgress] || null;
@@ -858,6 +1009,9 @@ const PracticeEditor: React.FC = () => {
       if (token === 'Backspace') return '←';
       return token;
     };
+    const isFindLikeMotion = (token: string | undefined): boolean => {
+      return token === 'f' || token === 'F' || token === 't' || token === 'T';
+    };
 
     const compacted: string[] = [];
     let i = 0;
@@ -869,7 +1023,9 @@ const PracticeEditor: React.FC = () => {
       }
       // Merge Vim count digits only when the sequence starts with 1-9.
       // Standalone '0' remains the 0-motion token.
-      if (/^[1-9]$/.test(key)) {
+      // Digits immediately following f/F/t/T are target chars, not counts.
+      const previousKey = i > 0 ? keys[i - 1] : undefined;
+      if (/^[1-9]$/.test(key) && !isFindLikeMotion(previousKey)) {
         let countToken = key;
         let j = i + 1;
         while (j < keys.length && /^[0-9]$/.test(keys[j] ?? '')) {
@@ -1264,6 +1420,17 @@ const PracticeEditor: React.FC = () => {
     };
   }, [taskSummaries]);
 
+  const recentKeysDisplay = useMemo(() => {
+    if (recentKeys.length === 0) return '';
+    const visibleCount = KEY_LOG_KEYS_PER_LINE * KEY_LOG_MAX_LINES;
+    const visibleKeys = recentKeys.slice(-visibleCount);
+    const lines: string[] = [];
+    for (let i = 0; i < visibleKeys.length; i += KEY_LOG_KEYS_PER_LINE) {
+      lines.push(visibleKeys.slice(i, i + KEY_LOG_KEYS_PER_LINE).join(' '));
+    }
+    return lines.join('\n');
+  }, [recentKeys]);
+
   // Task type display
   const getTaskTypeDisplay = (task: Task | null) => {
     if (!task) return { label: 'Loading...' };
@@ -1312,10 +1479,52 @@ const PracticeEditor: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      <div style={styles.raceContainer}>
+      <div
+        style={
+          showCheatSheet && !isSessionComplete
+            ? {
+                ...styles.raceContainer,
+                marginLeft: RACE_CONTAINER_LEFT_WITH_CHEATSHEET,
+                marginRight: 'auto',
+              }
+            : {
+                ...styles.raceContainer,
+                ...(isSessionComplete ? { maxWidth: '1500px' } : {}),
+                marginLeft: 'auto',
+                marginRight: 'auto',
+              }
+        }
+      >
+        {!isSessionComplete && showCheatSheet && (
+          <div style={styles.leftCheatSheetDock}>
+            <div style={styles.leftCheatSheetPanel}>
+              <div style={styles.leftCheatSheetHeader}>
+                <div style={{ ...styles.cheatSheetTitle, marginBottom: 0 }}>Cheat Sheet</div>
+                <button
+                  type="button"
+                  style={styles.cheatSheetToggle}
+                  onClick={() => setShowCheatSheet(false)}
+                >
+                  Hide
+                </button>
+              </div>
+              {VIM_CHEATSHEET.map((section) => (
+                <div key={section.title}>
+                  <div style={styles.cheatSheetSectionTitle}>{section.title}</div>
+                  {section.items.map((item) => (
+                    <div key={`${section.title}-${item.keys}`} style={styles.cheatSheetRow}>
+                      <div style={styles.cheatSheetKeys}>{item.keys}</div>
+                      <div style={styles.cheatSheetDescription}>{item.description}</div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {!isSessionComplete && (
           <div style={styles.header}>
-            <div style={styles.title}>Vim Racing - Practice</div>
+            <div style={styles.title}>VIM_GYM - Practice</div>
             <div style={styles.timer}>{formatTime(elapsedTime)}</div>
             <button style={styles.exitButton} onClick={() => navigate('/')}>
               Exit
@@ -1506,45 +1715,30 @@ const PracticeEditor: React.FC = () => {
                 color: isTaskComplete ? colors.successLight : colors.primaryLight,
               }}>
                 {isTaskComplete ? 'Complete!' : taskDisplay.label}
-                <span style={{ color: colors.textMuted, marginLeft: '8px' }}>
-                  ({taskProgress + 1}/{numTasks})
-                </span>
               </div>
               <div style={styles.taskDescription}>
                 {currentTask?.description || 'Loading task...'}
               </div>
-              {!isTaskComplete && currentTask?.type === 'navigate' && (
-                <div style={styles.taskHint}>
-                  Use vim motions: <code>gg</code> <code>G</code> <code>w</code> <code>b</code> <code>f</code> <code>$</code> <code>0</code>
-                </div>
-              )}
-              {!isTaskComplete && currentTask?.type === 'delete' && (
-                <div style={styles.taskHint}>
-                  Use vim delete: <code>dw</code> <code>dd</code> <code>d$</code> <code>di{'{'}</code> <code>da(</code>
-                </div>
-              )}
               {isTaskComplete && (
                 <div style={styles.nextTaskHint}>
                   Press Enter for next task
                 </div>
               )}
+              <div style={styles.taskProgressInlineRow}>
+                <span>Tasks Completed</span>
+                <span style={{ color: colors.primaryLight }}>
+                  {taskProgress + (isTaskComplete ? 1 : 0)}/{numTasks}
+                </span>
+              </div>
+              <div style={styles.progressBar}>
+                <div style={{ ...styles.progressFill, width: `${progressPercent}%` }} />
+              </div>
             </div>
 
             {/* Main Content */}
             <div style={styles.mainContent}>
               {/* Editor */}
               <div style={styles.editorPanel}>
-                <div style={styles.editorLabel}>
-                  Editor
-                  {currentTask && (
-                    <button
-                      style={styles.resetTaskButton}
-                      onClick={resetCurrentTask}
-                    >
-                      Reset (F6)
-                    </button>
-                  )}
-                </div>
                 <div style={styles.editorWrapper}>
                   <VimRaceEditor
                     ref={editorRef}
@@ -1556,47 +1750,66 @@ const PracticeEditor: React.FC = () => {
                     shouldAllowBlur={() => isTaskCompleteRef.current}
                   />
                 </div>
+                {currentTask && (
+                  <button
+                    style={styles.resetTaskButton}
+                    onClick={resetCurrentTask}
+                  >
+                    Reset (F6)
+                  </button>
+                )}
               </div>
 
               {/* Sidebar */}
               <div style={styles.sidebarColumn}>
-                <div style={styles.sidebar}>
-                  <div style={styles.sidebarTitle}>Progress</div>
-
-                  <div style={styles.progressRow}>
-                    <span>Tasks Completed</span>
-                    <span style={{ color: colors.primaryLight }}>
-                      {taskProgress + (isTaskComplete ? 1 : 0)}/{numTasks}
-                    </span>
-                  </div>
-
-                  <div style={styles.progressRow}>
-                    <span>Time</span>
-                    <span style={{ color: colors.warning }}>
-                      {formatTime(elapsedTime)}
-                    </span>
-                  </div>
-
-                  <div style={styles.progressBar}>
-                    <div style={{ ...styles.progressFill, width: `${progressPercent}%` }} />
-                  </div>
-
-                  <div style={styles.keyLogContainer}>
-                    <div style={styles.keyLogTitle}>Keys Pressed (Current Task)</div>
-                    <div style={styles.keyLogBox}>
-                      {recentKeys.length > 0
-                        ? recentKeys.join(' ')
-                        : <span style={styles.keyLogEmpty}>No keys yet...</span>}
-                    </div>
+                <div style={styles.keyLogContainer}>
+                  <div
+                    style={
+                      recentKeys.length > 0
+                        ? styles.keyLogBox
+                        : { ...styles.keyLogBox, ...styles.keyLogBoxEmpty }
+                    }
+                  >
+                    {recentKeys.length > 0
+                      ? recentKeysDisplay
+                      : <span style={styles.keyLogEmpty}>No keys yet...</span>}
                   </div>
                 </div>
 
                 <div style={styles.sidebarControls}>
                   <button
-                    style={styles.toggleButton}
+                    type="button"
+                    style={
+                      showCheatSheet
+                        ? {
+                            ...styles.cheatSheetToggle,
+                            width: '90%',
+                            marginTop: 0,
+                            color: colors.successLight,
+                            background: `${colors.success}20`,
+                            border: `1px solid ${colors.success}60`,
+                          }
+                        : { ...styles.cheatSheetToggle, width: '90%', marginTop: 0 }
+                    }
+                    onClick={() => setShowCheatSheet((prev) => !prev)}
+                  >
+                    {showCheatSheet ? '✓ ' : ''}Cheatsheet
+                  </button>
+
+                  <button
+                    style={
+                      relativeLineNumbers
+                        ? {
+                            ...styles.toggleButton,
+                            color: colors.successLight,
+                            background: `${colors.success}20`,
+                            border: `1px solid ${colors.success}60`,
+                          }
+                        : styles.toggleButton
+                    }
                     onClick={toggleRelativeLineNumbers}
                   >
-                    {relativeLineNumbers ? '[x] ' : '[ ] '}Relative Line Numbers
+                    {relativeLineNumbers ? '✓ ' : ''}Relative Line Numbers
                   </button>
 
                   <button style={styles.restartButton} onClick={fetchPracticeSession}>

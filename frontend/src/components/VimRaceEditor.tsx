@@ -39,6 +39,8 @@ export const editorColors = {
   borderLight: '#475569',
 };
 
+const EDITOR_FONT_SIZE_PX = '18px';
+
 // ---------------------------------------------------------------------------
 // Editor-only extensions (shared between practice & multiplayer)
 // ---------------------------------------------------------------------------
@@ -225,7 +227,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
           keymap.of([...defaultKeymap, ...searchKeymap]),
           EditorView.theme({
             '&': {
-              fontSize: '14px',
+              fontSize: EDITOR_FONT_SIZE_PX,
               fontFamily: '"JetBrains Mono", "Fira Code", monospace',
             },
             '.cm-content': {
@@ -258,7 +260,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
               backgroundColor: 'transparent',
               color: editorColors.textPrimary,
               fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-              fontSize: '14px',
+              fontSize: EDITOR_FONT_SIZE_PX,
               padding: '0',
               margin: '0',
             },
@@ -276,7 +278,7 @@ export const VimRaceEditor = forwardRef<VimRaceEditorHandle, VimRaceEditorProps>
               backgroundColor: 'transparent',
               color: editorColors.textPrimary,
               fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-              fontSize: '14px',
+              fontSize: EDITOR_FONT_SIZE_PX,
               border: 'none',
               borderRadius: '0',
               outline: 'none',
