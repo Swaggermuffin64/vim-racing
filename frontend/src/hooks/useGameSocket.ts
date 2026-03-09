@@ -32,6 +32,7 @@ const initialGameState: Omit<GameState, 'myPlayerId'> = {
   roomState: 'idle',
   players: [],
   task: EMPTY_TASK,
+  taskQueue: [],
   num_tasks: 0,
   countdown: null,
   startTime: null,
@@ -133,6 +134,7 @@ export function useGameSocket(): UseGameSocketReturn {
         roomState: 'waiting',
         players,
         task: EMPTY_TASK,
+        taskQueue: [],
         countdown: null,
         startTime: null,
         rankings: null,
@@ -155,24 +157,27 @@ export function useGameSocket(): UseGameSocketReturn {
       }));
     });
 
-    socket.on('game:start', ({ startTime, initialTask, num_tasks }) => {
+    socket.on('game:start', ({ startTime, initialTask, tasks, num_tasks }) => {
       setGameState(prev => ({
         ...prev,
         roomState: 'racing',
         countdown: null,
         startTime,
-        task: initialTask,
+        taskQueue: tasks,
+        task: initialTask || tasks[0] || EMPTY_TASK,
         num_tasks,
       }));
     });
 
-    socket.on('game:player_finished_task', ({ playerId, taskProgress, newTask }) => {
+    socket.on('game:player_finished_task', ({ playerId, taskProgress }) => {
       setGameState(prev => ({
         ...prev,
         players: prev.players.map(p =>
           p.id === playerId ? { ...p, taskProgress: taskProgress } : p
         ),
-        task: newTask,
+        task: playerId === prev.myPlayerId
+          ? (prev.taskQueue[taskProgress] || EMPTY_TASK)
+          : prev.task,
       }));
     });
 

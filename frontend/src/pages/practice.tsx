@@ -1,35 +1,30 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Vim, getCM } from '@replit/codemirror-vim';
 import type { CodeMirrorV } from '@replit/codemirror-vim';
 import { Transaction } from '@codemirror/state';
 
-import type { PracticeSummary, Task } from '../types/task';
+import type { PracticeSummary, Task, TaskSummary } from '../types/task';
 import type { KeystrokeEvent, TaskKeystrokeSubmission } from '../types/keystroke';
+import {
+  formatKeyLabel as sharedFormatKeyLabel,
+  formatTaskTypeLabel as sharedFormatTaskTypeLabel,
+  expandRecommendedSequence as sharedExpandRecommendedSequence,
+  formatKeysForDisplay as sharedFormatKeysForDisplay,
+} from '../utils/keyFormatting';
 import { setTargetPosition, setTargetRange } from '../extensions/targetHighlight';
 import { setDeleteMode, setAllowedDeleteRange, allowReset, setUndoBarrier } from '../extensions/readOnlyNavigation';
 import { VimRaceEditor, VimRaceEditorHandle, editorColors as colors } from '../components/VimRaceEditor';
 import { SummaryTaskSandbox } from '../components/SummaryTaskSandbox';
 
 const API_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-const KEY_LOG_KEYS_PER_LINE = 10;
-const KEY_LOG_MAX_LINES = 2;
+const KEY_LOG_VISIBLE_KEYS = 5;
 const CHEATSHEET_DOCK_WIDTH = 'clamp(18rem, 22vw, 24rem)';
 const CHEATSHEET_CONTAINER_SHIFT = 'clamp(2.375rem, 3.25vw, 3.5rem)';
 const RACE_CONTAINER_LEFT_WITH_CHEATSHEET = `max(1.5rem, calc((100vw - 1200px) / 2 + ${CHEATSHEET_CONTAINER_SHIFT}))`;
 const CHEATSHEET_DOCK_LEFT = `max(0.75rem, calc((${RACE_CONTAINER_LEFT_WITH_CHEATSHEET} - ${CHEATSHEET_DOCK_WIDTH}) / 2))`;
 
-interface TaskSummary {
-  taskIndex: number;
-  taskId: string;
-  taskType: Task['type'];
-  task: Task;
-  durationMs: number;
-  keyCount: number;
-  keySequence: string;
-  optimalSequence?: string;
-  ourSolutionKeyCount?: number;
-}
+// TaskSummary imported from '../types/task'
 
 interface PracticeSessionResponse {
   tasks: Task[];
@@ -204,7 +199,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '12px',
     display: 'flex',
     flexDirection: 'column' as const,
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
+    gap: '10px',
   },
   cheatSheetPanel: {
     marginTop: '16px',
@@ -265,7 +261,7 @@ const styles: Record<string, React.CSSProperties> = {
   cheatSheetKeys: {
     color: '#ffffff',
     fontFamily: '"JetBrains Mono", monospace',
-    fontSize: '12px',
+    fontSize: '14px',
     fontWeight: 700,
     letterSpacing: '0.2px',
   },
@@ -276,7 +272,12 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.4,
   },
   keyLogContainer: {
-    marginTop: 0,
+    background: `linear-gradient(135deg, ${colors.bgGradientStart} 0%, ${colors.bgGradientEnd} 100%)`,
+    border: `1px solid ${colors.border}`,
+    borderRadius: '12px',
+    padding: '14px',
+    boxSizing: 'border-box' as const,
+    overflow: 'hidden' as const,
   },
   keyLogTitle: {
     fontSize: '12px',
@@ -291,22 +292,24 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: '100%',
     minWidth: 0,
     boxSizing: 'border-box' as const,
-    minHeight: '84px',
-    maxHeight: '84px',
+    minHeight: '48px',
+    maxHeight: '48px',
     overflowY: 'hidden' as const,
     overflowX: 'hidden' as const,
-    whiteSpace: 'pre-line' as const,
-    wordBreak: 'break-word' as const,
-    overflowWrap: 'anywhere' as const,
+    // Single-line key log, anchored to the right so newest keys stay visible.
+    whiteSpace: 'nowrap' as const,
     border: `1px solid ${colors.border}`,
     borderRadius: '8px',
     background: colors.bgCard,
-    padding: '8px',
+    padding: '8px 12px 8px 8px',
     fontFamily: '"JetBrains Mono", monospace',
     fontSize: '24px',
     fontWeight: 700,
     color: '#ffffff',
     lineHeight: 1.4,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   keyLogBoxEmpty: {
     display: 'flex',
@@ -368,6 +371,58 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: '0.6px',
     transition: 'all 0.2s ease',
     marginTop: '12px',
+  },
+  sidebarControlButton: {
+    width: '100%',
+    height: '42px',
+    padding: '0 12px',
+    fontSize: '13px',
+    fontWeight: 700,
+    color: colors.textSecondary,
+    background: `${colors.border}22`,
+    border: `1px solid ${colors.borderLight}`,
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontFamily: '"JetBrains Mono", monospace',
+    letterSpacing: '0.4px',
+    transition: 'all 0.2s ease',
+    position: 'relative' as const,
+    textAlign: 'left' as const,
+  },
+  sidebarControlButtonCheckable: {
+    position: 'relative' as const,
+    textAlign: 'left' as const,
+    paddingRight: '34px',
+  },
+  sidebarControlButtonLabel: {
+    display: 'block',
+    whiteSpace: 'nowrap' as const,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  sidebarToggleCheck: {
+    position: 'absolute' as const,
+    right: '12px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    color: colors.successLight,
+    fontWeight: 700,
+  },
+  sidebarActionsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+    width: '100%',
+  },
+  sidebarActionNewTasks: {
+    color: colors.primaryLight,
+    background: `${colors.primary}20`,
+    border: `1px solid ${colors.primary}55`,
+  },
+  sidebarActionSameTasks: {
+    color: colors.secondaryLight,
+    background: `${colors.secondary}16`,
+    border: `1px solid ${colors.secondary}55`,
   },
   restartButton: {
     width: '90%',
@@ -911,8 +966,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
 };
 
+interface PracticeLocationState {
+  tasks?: Task[];
+}
+
 const PracticeEditor: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as PracticeLocationState | null;
   const editorRef = useRef<VimRaceEditorHandle>(null);
   const timerRef = useRef<number>(0);
 
@@ -945,6 +1006,7 @@ const PracticeEditor: React.FC = () => {
   const taskStartedAtRef = useRef<number>(Date.now());
   const taskKeystrokesRef = useRef<KeystrokeEvent[]>([]);
   const submittedTaskIdsRef = useRef<Set<string>>(new Set());
+  const isFetchingPracticeSessionRef = useRef(false);
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -972,24 +1034,11 @@ const PracticeEditor: React.FC = () => {
   };
 
   const formatKeyLabel = useCallback((key: string): string | null => {
-    if (key === ' ') return 'Space';
-    if (key === 'Escape') return 'Esc';
-    if (key === 'ArrowLeft') return 'Left';
-    if (key === 'ArrowRight') return 'Right';
-    if (key === 'ArrowUp') return 'Up';
-    if (key === 'ArrowDown') return 'Down';
-    if (key === 'Control') return 'Ctrl';
-    if (key === 'Meta') return null;
-    if (key === 'Alt') return 'Alt';
-    if (key === 'Shift') return 'Shift';
-    return key;
+    return sharedFormatKeyLabel(key);
   }, []);
 
   const formatTaskTypeLabel = useCallback((taskType: Task['type']): string => {
-    if (taskType === 'navigate') return 'Navigate';
-    if (taskType === 'delete') return 'Delete';
-    if (taskType === 'insert') return 'Insert';
-    return 'Change';
+    return sharedFormatTaskTypeLabel(taskType);
   }, []);
 
   const normalizeUserKeysForComparison = useCallback((events: KeystrokeEvent[]): string[] => {
@@ -1000,46 +1049,11 @@ const PracticeEditor: React.FC = () => {
   }, []);
 
   const expandRecommendedSequence = useCallback((recommendedSequence: string[]): string[] => {
-    // Graph keys are tokenized (e.g. ["2", "l"] or ["fa"]); compare by actual keystrokes.
-    return recommendedSequence.flatMap((token) => token.split(''));
+    return sharedExpandRecommendedSequence(recommendedSequence);
   }, []);
 
   const formatKeysForDisplay = useCallback((keys: string[]): string => {
-    const toDisplayToken = (token: string): string => {
-      if (token === 'Backspace') return '←';
-      return token;
-    };
-    const isFindLikeMotion = (token: string | undefined): boolean => {
-      return token === 'f' || token === 'F' || token === 't' || token === 'T';
-    };
-
-    const compacted: string[] = [];
-    let i = 0;
-    while (i < keys.length) {
-      const key = keys[i];
-      if (!key) {
-        i += 1;
-        continue;
-      }
-      // Merge Vim count digits only when the sequence starts with 1-9.
-      // Standalone '0' remains the 0-motion token.
-      // Digits immediately following f/F/t/T are target chars, not counts.
-      const previousKey = i > 0 ? keys[i - 1] : undefined;
-      if (/^[1-9]$/.test(key) && !isFindLikeMotion(previousKey)) {
-        let countToken = key;
-        let j = i + 1;
-        while (j < keys.length && /^[0-9]$/.test(keys[j] ?? '')) {
-          countToken += keys[j];
-          j += 1;
-        }
-        compacted.push(toDisplayToken(countToken));
-        i = j;
-        continue;
-      }
-      compacted.push(toDisplayToken(key));
-      i += 1;
-    }
-    return compacted.join(' ');
+    return sharedFormatKeysForDisplay(keys);
   }, []);
 
   const submitTaskKeystrokes = useCallback(async (
@@ -1159,6 +1173,8 @@ const PracticeEditor: React.FC = () => {
 
   // Fetch a new practice session (state only — task setup handled by effect)
   const fetchPracticeSession = useCallback(async () => {
+    if (isFetchingPracticeSessionRef.current) return;
+    isFetchingPracticeSessionRef.current = true;
     try {
       const response = await fetch(`${API_BASE}/api/task/practice`);
       const data = (await response.json()) as PracticeSessionResponse;
@@ -1168,6 +1184,8 @@ const PracticeEditor: React.FC = () => {
       resetPracticeRunState();
     } catch (error) {
       console.error('Failed to fetch practice session:', error);
+    } finally {
+      isFetchingPracticeSessionRef.current = false;
     }
   }, [resetPracticeRunState]);
 
@@ -1184,12 +1202,38 @@ const PracticeEditor: React.FC = () => {
     editorRef.current?.view?.focus();
   }, [fetchPracticeSession, resetPracticeRunState, setupTaskInEditor]);
 
-  // Trigger initial fetch when user clicks Ready
+  // Load pre-supplied tasks (e.g. from multiplayer review) on mount.
+  // Bypasses the Ready screen and starts practice immediately.
+  const preloadedRef = useRef(false);
   useEffect(() => {
-    if (isReady) {
+    if (preloadedRef.current) return;
+    const incoming = locationState?.tasks;
+    if (!incoming || incoming.length === 0) return;
+    preloadedRef.current = true;
+
+    // Clear the navigation state so a page refresh fetches fresh tasks
+    window.history.replaceState({}, '');
+
+    setTasks(incoming);
+    setNumTasks(incoming.length);
+    resetPracticeRunState();
+    setIsReady(true);
+  }, [locationState, resetPracticeRunState]);
+
+  // Prefetch practice tasks on page load so Ready can start immediately.
+  useEffect(() => {
+    const incoming = locationState?.tasks;
+    if (incoming && incoming.length > 0) return;
+    if (tasks.length > 0) return;
+    void fetchPracticeSession();
+  }, [locationState, tasks.length, fetchPracticeSession]);
+
+  // Trigger initial fetch when user clicks Ready (only if no preloaded tasks)
+  useEffect(() => {
+    if (isReady && tasks.length === 0) {
       fetchPracticeSession();
     }
-  }, [isReady, fetchPracticeSession]);
+  }, [isReady, tasks.length, fetchPracticeSession]);
 
   // Set up the first task when tasks are loaded (or reloaded on restart)
   useEffect(() => {
@@ -1422,13 +1466,7 @@ const PracticeEditor: React.FC = () => {
 
   const recentKeysDisplay = useMemo(() => {
     if (recentKeys.length === 0) return '';
-    const visibleCount = KEY_LOG_KEYS_PER_LINE * KEY_LOG_MAX_LINES;
-    const visibleKeys = recentKeys.slice(-visibleCount);
-    const lines: string[] = [];
-    for (let i = 0; i < visibleKeys.length; i += KEY_LOG_KEYS_PER_LINE) {
-      lines.push(visibleKeys.slice(i, i + KEY_LOG_KEYS_PER_LINE).join(' '));
-    }
-    return lines.join('\n');
+    return recentKeys.slice(-KEY_LOG_VISIBLE_KEYS).join(' ');
   }, [recentKeys]);
 
   // Task type display
@@ -1763,6 +1801,7 @@ const PracticeEditor: React.FC = () => {
               {/* Sidebar */}
               <div style={styles.sidebarColumn}>
                 <div style={styles.keyLogContainer}>
+                  <div style={styles.keyLogTitle}>Keys Pressed (Current Task)</div>
                   <div
                     style={
                       recentKeys.length > 0
@@ -1779,46 +1818,42 @@ const PracticeEditor: React.FC = () => {
                 <div style={styles.sidebarControls}>
                   <button
                     type="button"
-                    style={
-                      showCheatSheet
-                        ? {
-                            ...styles.cheatSheetToggle,
-                            width: '90%',
-                            marginTop: 0,
-                            color: colors.successLight,
-                            background: `${colors.success}20`,
-                            border: `1px solid ${colors.success}60`,
-                          }
-                        : { ...styles.cheatSheetToggle, width: '90%', marginTop: 0 }
-                    }
+                    style={{
+                      ...styles.sidebarControlButton,
+                      ...styles.sidebarControlButtonCheckable,
+                    }}
                     onClick={() => setShowCheatSheet((prev) => !prev)}
                   >
-                    {showCheatSheet ? '✓ ' : ''}Cheatsheet
+                    <span style={styles.sidebarControlButtonLabel}>Cheatsheet</span>
+                    {showCheatSheet && <span style={styles.sidebarToggleCheck}>✓</span>}
                   </button>
 
                   <button
-                    style={
-                      relativeLineNumbers
-                        ? {
-                            ...styles.toggleButton,
-                            color: colors.successLight,
-                            background: `${colors.success}20`,
-                            border: `1px solid ${colors.success}60`,
-                          }
-                        : styles.toggleButton
-                    }
+                    style={{
+                      ...styles.sidebarControlButton,
+                      ...styles.sidebarControlButtonCheckable,
+                    }}
                     onClick={toggleRelativeLineNumbers}
                   >
-                    {relativeLineNumbers ? '✓ ' : ''}Relative Line Numbers
+                    <span style={styles.sidebarControlButtonLabel}>Relative Lines</span>
+                    {relativeLineNumbers && <span style={styles.sidebarToggleCheck}>✓</span>}
                   </button>
 
-                  <button style={styles.restartButton} onClick={fetchPracticeSession}>
-                    Restart with New Tasks
-                  </button>
+                  <div style={styles.sidebarActionsRow}>
+                    <button
+                      style={{ ...styles.sidebarControlButton, ...styles.sidebarActionNewTasks }}
+                      onClick={fetchPracticeSession}
+                    >
+                      <span style={styles.sidebarControlButtonLabel}>New Tasks</span>
+                    </button>
 
-                  <button style={styles.restartSameButton} onClick={restartSameTasks}>
-                    Restart Same Tasks
-                  </button>
+                    <button
+                      style={{ ...styles.sidebarControlButton, ...styles.sidebarActionSameTasks }}
+                      onClick={restartSameTasks}
+                    >
+                      <span style={styles.sidebarControlButtonLabel}>Same Tasks</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

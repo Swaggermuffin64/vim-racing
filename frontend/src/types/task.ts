@@ -47,6 +47,18 @@ export interface TaskResponse {
   startTime: number;
 }
 
+export interface TaskSummary {
+  taskIndex: number;
+  taskId: string;
+  taskType: Task['type'];
+  task: Task;
+  durationMs: number;
+  keyCount: number;
+  keySequence: string;
+  optimalSequence?: string;
+  ourSolutionKeyCount?: number;
+}
+
 export interface PracticeSummary {
   totalTasks: number;
   navigateTasks: number;

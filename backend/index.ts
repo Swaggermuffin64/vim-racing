@@ -232,6 +232,51 @@ fastify.post<{
   };
 });
 
+fastify.get<{
+  Params: { roomId: string };
+}>('/api/multiplayer/stats/:roomId', async (request) => {
+  const roomIdResult = validateRoomId(request.params.roomId);
+  if (!roomIdResult.valid || !roomIdResult.value) {
+    return { success: false, error: roomIdResult.error || 'Invalid room ID' };
+  }
+
+  const roomId = roomIdResult.value;
+  const summaries = new Map<string, { taskCount: number; totalDurationMs: number; totalKeys: number }>();
+
+  for (const { data } of taskKeystrokeRecords.values()) {
+    if (data.source !== 'multiplayer') continue;
+    if (!data.roomId || data.roomId !== roomId) continue;
+    if (!data.playerId) continue;
+
+    const durationMs = Math.max(0, data.completedAt - data.startedAt);
+    const existing = summaries.get(data.playerId) || { taskCount: 0, totalDurationMs: 0, totalKeys: 0 };
+    existing.taskCount += 1;
+    existing.totalDurationMs += durationMs;
+    existing.totalKeys += data.events.length;
+    summaries.set(data.playerId, existing);
+  }
+
+  return {
+    success: true,
+    roomId,
+    players: Array.from(summaries.entries()).map(([playerId, agg]) => {
+      const keysPerSecond = agg.totalDurationMs > 0
+        ? agg.totalKeys / (agg.totalDurationMs / 1000)
+        : 0;
+      const avgDurationMs = agg.taskCount > 0 ? agg.totalDurationMs / agg.taskCount : 0;
+      const avgKeys = agg.taskCount > 0 ? Math.round(agg.totalKeys / agg.taskCount) : 0;
+
+      return {
+        playerId,
+        taskCount: agg.taskCount,
+        keysPerSecond,
+        avgDurationMs,
+        avgKeys,
+      };
+    }),
+  };
+});
+
 // Get a practice session (10 tasks: 5 position + 5 delete, shuffled)
 fastify.get('/api/task/practice', async () => {
   const NUM_TASKS = 10;

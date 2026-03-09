@@ -33,7 +33,7 @@ export class RoomManager {
   private waitingRoomTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> waiting timeout
   private roomDestroyTimers: Map<string, NodeJS.Timeout> = new Map(); // roomId -> post-race destroy timer
   private io: GameServer;
-  private NUM_TASKS: number = 10;
+  private NUM_TASKS: number = 2;
   private MIN_TASK_COMPLETION_MS = 150; // Reject completions faster than any human can react
   private ROOM_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes idle timeout for finished rooms
   private WAITING_ROOM_TIMEOUT_MS_PRIVATE = 5 * 60 * 1000; // 5 minutes for private rooms (friends coordinating)
@@ -315,7 +315,12 @@ export class RoomManager {
     });
 
     console.log(`🏁 Race started in room ${roomId}`);
-    this.io.to(roomId).emit('game:start', { startTime: room.startTime, initialTask: room.tasks[0], num_tasks: room.num_tasks});
+    this.io.to(roomId).emit('game:start', {
+      startTime: room.startTime,
+      initialTask: room.tasks[0],
+      tasks: room.tasks,
+      num_tasks: room.num_tasks,
+    });
   }
 
   handleCursorMove(socket: GameSocket, offset: number): void {
@@ -410,7 +415,6 @@ export class RoomManager {
     socket.emit('game:player_finished_task', {
       playerId,
       taskProgress: player.taskProgress,
-      newTask: room.tasks[player.taskProgress]
     });
     
     // Send the progress to the opponents
